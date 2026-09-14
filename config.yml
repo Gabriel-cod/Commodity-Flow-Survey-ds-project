@@ -1,0 +1,32 @@
+# Configuracao de ambientes (pacote {config}).
+# O bloco ativo vem de R_CONFIG_ACTIVE no .Renviron.
+# Nenhuma senha aqui: apenas nomes de variaveis de ambiente.
+
+default:
+  projeto: "commodity-flow-survey"
+  seed: 202602
+  tamanho_amostra: 200000
+  caminhos:
+    raw: "data/raw/cfs_2022_pums.csv"
+    amostra: "data/interim/amostra.csv"
+    amostra_dicio: "data/processed/amostra_dicio.csv"
+    dicionario: "data/external/dicionario.xlsx"
+  # Banco padrao: DuckDB local, funciona sem .Renviron e sem rede.
+  banco:
+    driver: "duckdb"
+    arquivo: "data/cfs.duckdb"
+    schema: "main"
+
+local_duckdb:
+  inherits: default
+
+postgres:
+  inherits: default
+  banco:
+    driver: "postgres"
+    host: !expr Sys.getenv("CFS_DB_HOST")
+    port: !expr as.integer(Sys.getenv("CFS_DB_PORT", "5432"))
+    dbname: !expr Sys.getenv("CFS_DB_NAME")
+    user: !expr Sys.getenv("CFS_DB_USER")
+    password: !expr Sys.getenv("CFS_DB_PASSWORD")
+    schema: !expr Sys.getenv("CFS_DB_SCHEMA", "cfs")

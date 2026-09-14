@@ -1,0 +1,40 @@
+# ---- R ----
+.Rhistory
+.Rapp.history
+.RData
+.Rproj.user/
+*.Rproj.user
+.Ruserdata
+*_cache/
+/cache/
+*.utf8.md
+*.knit.md
+/*_files/
+
+# ---- Segredos (NUNCA versionar) ----
+.Renviron
+.env
+*.pem
+*.key
+
+# ---- Dados ----
+# Dados brutos e intermediarios sao grandes: ficam fora do git.
+data/raw/*
+data/interim/*
+data/processed/*
+!data/**/.gitkeep
+!data/**/README.md
+# data/external/ (dicionario e lookups pequenos) fica versionado.
+data/*.duckdb
+data/*.sqlite
+data/*.sqlite3
+
+# ---- Saidas geradas ----
+outputs/figures/*
+outputs/tables/*
+!outputs/**/.gitkeep
+
+# ---- Sistema ----
+.DS_Store
+Thumbs.db
+*~

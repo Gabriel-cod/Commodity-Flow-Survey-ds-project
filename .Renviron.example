@@ -1,0 +1,13 @@
+# Copie para .Renviron (que NAO vai para o git) e preencha.
+# Leia no R com Sys.getenv("CFS_DB_HOST").
+
+# Qual bloco do config.yml usar: local_duckdb | postgres | ...
+R_CONFIG_ACTIVE=local_duckdb
+
+# Credenciais do banco externo
+CFS_DB_HOST=
+CFS_DB_PORT=5432
+CFS_DB_NAME=
+CFS_DB_USER=
+CFS_DB_PASSWORD=
+CFS_DB_SCHEMA=cfs
