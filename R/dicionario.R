@@ -1,32 +1,38 @@
 # Funcoes para aplicar o dicionario de variaveis do CFS a base.
 
+# Colunas que o dicionario so descreve por faixa, sem rotulo por codigo.
+SEM_ROTULO <- c("ORIG_MA", "DEST_MA", "SHIPMT_ID")
+
+# O dicionario do Census chama de TEMP_CNTRL_YN a coluna que na base e TEMP_CNTL_YN.
+VARIAVEL_NO_DICIONARIO <- c(TEMP_CNTL_YN = "TEMP_CNTRL_YN")
+
 #' Le o dicionario (xlsx) do Census.
 ler_dicionario <- function(arquivo = caminho("dicionario")) {
   readxl::read_excel(arquivo)
 }
 
 #' Extrai o de-para (codigo -> rotulo) de uma variavel do dicionario.
-#' O codigo vem como texto no dicionario e como inteiro na base; por isso a
-#' juncao e sempre feita com as duas pontas convertidas para character.
 de_para <- function(dicionario, variavel, sufixo = "_desc") {
+  nome <- if (variavel %in% names(VARIAVEL_NO_DICIONARIO)) VARIAVEL_NO_DICIONARIO[[variavel]] else variavel
   dicionario |>
-    dplyr::filter(.data$VARIABLE == variavel) |>
+    dplyr::filter(.data$VARIABLE == nome) |>
     dplyr::select(dplyr::all_of(c("VALUE_CODE", "VALUE_LABEL"))) |>
-    dplyr::mutate(VALUE_CODE = trimws(as.character(.data$VALUE_CODE))) |>
+    dplyr::mutate(VALUE_CODE = trimws(.data$VALUE_CODE)) |>
     dplyr::distinct() |>
     stats::setNames(c(variavel, paste0(variavel, sufixo)))
 }
 
 #' Adiciona a coluna de rotulo de `variavel` ao data.frame.
-#' Resolve o problema relatado em docs/notas: char vs int gerando NA no join.
+#' Os codigos precisam chegar como texto, ja tipados pelo tratamento
+#' (scripts/02_trata_base.R): aqui nao ha conversao.
 rotular <- function(dados, dicionario, variavel, sufixo = "_desc") {
-  mapa <- de_para(dicionario, variavel, sufixo)
-  names(mapa)[1] <- ".chave_join"
-
-  dados |>
-    dplyr::mutate(.chave_join = trimws(as.character(.data[[variavel]]))) |>
-    dplyr::left_join(mapa, by = ".chave_join") |>
-    dplyr::select(-".chave_join")
+  if (variavel %in% SEM_ROTULO) {
+    stop(variavel, " não tem rótulo no dicionário; use a coluna *_CFS_AREA", call. = FALSE)
+  }
+  if (!is.character(dados[[variavel]])) {
+    stop(variavel, " deve chegar como texto; corrija a tipagem no tratamento", call. = FALSE)
+  }
+  dplyr::left_join(dados, de_para(dicionario, variavel, sufixo), by = variavel)
 }
 
 #' Quantos codigos ficaram sem rotulo apos o join (controle de qualidade).
