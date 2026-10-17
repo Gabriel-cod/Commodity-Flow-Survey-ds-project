@@ -55,6 +55,12 @@ PERCENTIS_RAZAO <- c(0.001, 0.999)
 LIBRA_EM_T      <- 0.00045359237
 MILHA_EM_KM     <- 1.609344
 
+# Tratamento completo em uma passada atinge ~15,2 GB de RAM (medido). Com menos
+# memoria, o DuckDB recebe um limite e processa por partes, gravando o excedente
+# em disco: mesmo resultado, mais lento (6 GB: 166 s; 3 GB: 265 s; sem limite: 24 s).
+MEMORIA_UM_PASSO_GIB <- 16
+FRACAO_RAM_LIMITE    <- 0.5
+
 FLAGS <- c(
   "fl_sctg_colapsado", "fl_origem_ma_suprimida", "fl_origem_suprimida", "fl_exportacao",
   "fl_intra_area", "fl_valor_teto", "fl_fator_teto", "fl_fator_menor_1", "fl_razao_atipica"
@@ -238,6 +244,7 @@ fechar_base <- function(base) {
 }
 
 .construir <- function(con, origem) {
+  .ajustar_memoria(con)
   colunas <- paste(sprintf("'%s': '%s'", names(TIPOS_CFS), TIPOS_CFS), collapse = ", ")
   leitura <- sprintf("read_csv(%s, header = true, columns = {%s})",
                      DBI::dbQuoteString(con, normalizePath(origem)), colunas)
@@ -315,6 +322,38 @@ fechar_base <- function(base) {
 }
 
 .num <- function(x) format(x, scientific = FALSE, digits = 15)
+
+# O memory_limit padrao do DuckDB e 80% da RAM fisica, em qualquer sistema:
+# serve de medida da memoria da maquina.
+.ajustar_memoria <- function(con) {
+  padrao <- .em_gib(DBI::dbGetQuery(con, "SELECT current_setting('memory_limit') AS m")$m)
+  limite <- .limite_memoria(padrao)
+  if (is.null(limite)) {
+    message("Memória: uma passada (limite padrão do DuckDB: ", round(padrao, 1), " GiB)")
+    return(invisible(NULL))
+  }
+  excedente <- file.path(tempdir(), "cfs_duckdb_excedente")
+  dir.create(excedente, showWarnings = FALSE)
+  DBI::dbExecute(con, sprintf("SET memory_limit = '%sGiB'", .num(limite)))
+  DBI::dbExecute(con, sprintf("SET temp_directory = %s", DBI::dbQuoteString(con, excedente)))
+  message("Memória: limite de ", limite, " GiB com excedente em disco (mais lento, mesmo resultado)")
+}
+
+# NULL = cabe numa passada; senao, o limite em GiB.
+.limite_memoria <- function(padrao_gib) {
+  if (padrao_gib >= MEMORIA_UM_PASSO_GIB) return(NULL)
+  floor(padrao_gib / 0.8 * FRACAO_RAM_LIMITE * 10) / 10
+}
+
+.em_gib <- function(texto) {
+  partes <- regmatches(texto, regexec("^\\s*([0-9.]+)\\s*([A-Za-z]+)\\s*$", texto))[[1]]
+  fatores <- c(bytes = 1 / 1024^3, KiB = 1 / 1024^2, MiB = 1 / 1024, GiB = 1, TiB = 1024,
+               KB = 1e3 / 1024^3, MB = 1e6 / 1024^3, GB = 1e9 / 1024^3, TB = 1e12 / 1024^3)
+  if (length(partes) != 3 || !partes[3] %in% names(fatores)) {
+    stop("Limite de memória do DuckDB em formato desconhecido: ", texto, call. = FALSE)
+  }
+  as.numeric(partes[2]) * fatores[[partes[3]]]
+}
 
 .exigir_origem <- function(origem) {
   if (!file.exists(origem)) {

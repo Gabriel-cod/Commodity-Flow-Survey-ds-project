@@ -102,6 +102,33 @@ test_that("codigo com largura invalida gera erro citando a coluna (T-F13)", {
   expect_length(ls(.registro()), 0)
 })
 
+test_that("limite de memoria do DuckDB e convertido para GiB", {
+  expect_equal(.em_gib("24.8 GiB"), 24.8)
+  expect_equal(.em_gib("512 MiB"), 0.5)
+  expect_equal(.em_gib("2 TiB"), 2048)
+  expect_equal(.em_gib("8 GB"), 8e9 / 1024^3)
+  expect_error(.em_gib("muito"), "formato desconhecido")
+})
+
+test_that("uma passada com memoria suficiente; senao limite de metade da RAM", {
+  expect_null(.limite_memoria(24.8))
+  expect_null(.limite_memoria(MEMORIA_UM_PASSO_GIB))
+  # 12,8 GiB de padrao = 16 GiB de RAM -> limite de 8 GiB
+  expect_equal(.limite_memoria(12.8), 8)
+  expect_equal(.limite_memoria(6.2), 3.8)
+})
+
+test_that("modo por partes gera a mesma base que uma passada", {
+  arquivo <- withr::local_tempfile(fileext = ".duckdb")
+  con <- .abrir(arquivo)
+  withr::defer(desconectar_bd(con))
+  DBI::dbExecute(con, "SET memory_limit = '2GiB'")
+
+  expect_message(.construir(con, fixture()), "excedente em disco")
+  por_partes <- dplyr::arrange(dplyr::collect(dplyr::tbl(con, "cfs_tratada")), SHIPMT_ID)
+  expect_equal(por_partes, coletar(origem = fixture()))
+})
+
 # Base gravada (pipeline = FALSE) -------------------------------------------
 
 gravar <- function(...) suppressMessages(obter_base_tratada(pipeline = FALSE, ...))
