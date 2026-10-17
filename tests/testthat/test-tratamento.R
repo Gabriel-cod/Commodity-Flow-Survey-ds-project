@@ -102,6 +102,125 @@ test_that("codigo com largura invalida gera erro citando a coluna (T-F13)", {
   expect_length(ls(.registro()), 0)
 })
 
+# Base gravada (pipeline = FALSE) -------------------------------------------
+
+gravar <- function(...) suppressMessages(obter_base_tratada(pipeline = FALSE, ...))
+metadados <- function(base) DBI::dbGetQuery(dbplyr::remote_con(base), "SELECT * FROM metadados")
+novo_destino <- function(env = parent.frame()) {
+  file.path(withr::local_tempdir(.local_envir = env), "base.duckdb")
+}
+
+# Copia das regras com TETO_VALOR = 1: muda o hash e marca fl_valor_teto em tudo.
+regras_editadas <- function(env = parent.frame()) {
+  copia <- withr::local_tempfile(fileext = ".R", .local_envir = env)
+  writeLines(sub("^TETO_VALOR\\s*<-.*$", "TETO_VALOR <- 1", readLines(ARQUIVO_REGRAS)), copia)
+  copia
+}
+
+test_that("FALSE grava o destino com metadados (T-F3)", {
+  destino <- novo_destino()
+  base <- gravar(origem = fixture(), destino = destino)
+  withr::defer(fechar_base(base))
+  meta <- metadados(base)
+
+  expect_true(file.exists(destino))
+  expect_identical(meta$hash_regras, hash_regras())
+  expect_equal(meta$n_linhas, 20)
+  expect_identical(meta$arquivo_origem, "tests/testthat/fixtures/cfs_mini.csv")
+})
+
+test_that("base atual nao e reprocessada (T-F4)", {
+  destino <- novo_destino()
+  b1 <- gravar(origem = fixture(), destino = destino)
+  antes <- metadados(b1)$processado_em
+  fechar_base(b1)
+
+  b2 <- gravar(origem = fixture(), destino = destino)
+  withr::defer(fechar_base(b2))
+  expect_equal(metadados(b2)$processado_em, antes)
+})
+
+test_that("regras editadas reprocessam e valem na base (T-F5)", {
+  destino <- novo_destino()
+  b1 <- gravar(origem = fixture(), destino = destino)
+  antes <- metadados(b1)
+  fechar_base(b1)
+
+  copia <- regras_editadas()
+  b2 <- gravar(origem = fixture(), destino = destino, arquivo_regras = copia)
+  withr::defer(fechar_base(b2))
+  depois <- metadados(b2)
+
+  expect_identical(depois$hash_regras, hash_regras(copia))
+  expect_true(depois$processado_em > antes$processado_em)
+  expect_true(all(dplyr::collect(b2)$fl_valor_teto))
+})
+
+test_that("falha durante a construcao deixa o destino intacto (T-F6)", {
+  destino <- novo_destino()
+  fechar_base(gravar(origem = fixture(), destino = destino))
+  md5 <- tools::md5sum(destino)
+
+  expect_error(gravar(origem = fixture("cfs_mini_valor_invalido.csv"), destino = destino,
+                      arquivo_regras = regras_editadas()))
+  expect_identical(tools::md5sum(destino), md5)
+  expect_length(list.files(dirname(destino), pattern = "\\.tmp-|\\.wal$"), 0)
+})
+
+test_that("destino na pasta da origem ou em data/raw gera erro (T-F7)", {
+  pasta <- withr::local_tempdir()
+  origem <- file.path(pasta, "cfs.csv")
+  file.copy(fixture(), origem)
+  destino <- file.path(pasta, "sub", "base.duckdb")
+  expect_error(gravar(origem = origem, destino = destino), "pasta dos dados brutos")
+  expect_false(file.exists(destino))
+
+  destino_raw <- here::here("data", "raw", "nao_deve_existir.duckdb")
+  expect_error(gravar(origem = fixture(), destino = destino_raw), "pasta dos dados brutos")
+  expect_length(list.files(here::here("data", "raw"), pattern = "nao_deve_existir"), 0)
+})
+
+test_that("base aberta na sessao nao impede ver as regras novas (T-F10)", {
+  destino <- novo_destino()
+  b1 <- gravar(origem = fixture(), destino = destino)
+
+  copia <- regras_editadas()
+  b2 <- gravar(origem = fixture(), destino = destino, arquivo_regras = copia)
+  withr::defer(fechar_base(b2))
+
+  expect_identical(metadados(b2)$hash_regras, hash_regras(copia))
+  expect_true(all(dplyr::collect(b2)$fl_valor_teto))
+  expect_error(dplyr::collect(b1))
+})
+
+test_that("outra origem com o mesmo destino reprocessa (T-F11)", {
+  destino <- novo_destino()
+  fechar_base(gravar(origem = fixture(), destino = destino))
+
+  b2 <- gravar(origem = fixture("cfs_mini_b.csv"), destino = destino)
+  withr::defer(fechar_base(b2))
+  expect_equal(metadados(b2)$n_linhas, 19)
+})
+
+test_that("fechar_base nao apaga a base gravada (T-F14)", {
+  destino <- novo_destino()
+  fechar_base(gravar(origem = fixture(), destino = destino))
+  expect_true(file.exists(destino))
+})
+
+test_that("registro sobrevive a um novo source() do arquivo (T-F15)", {
+  destino <- novo_destino()
+  copia <- withr::local_tempfile(fileext = ".R")
+  file.copy(ARQUIVO_REGRAS, copia)
+  gravar(origem = fixture(), destino = destino, arquivo_regras = copia)
+
+  writeLines(sub("^TETO_VALOR\\s*<-.*$", "TETO_VALOR <- 1", readLines(copia)), copia)
+  source(here::here("scripts", "02_trata_base.R"))
+  b2 <- gravar(origem = fixture(), destino = destino, arquivo_regras = copia)
+  withr::defer(fechar_base(b2))
+  expect_true(all(dplyr::collect(b2)$fl_valor_teto))
+})
+
 test_that("o CSV de origem nunca e alterado (T-F8)", {
   expect_identical(tools::md5sum(fixture()), md5_fixture)
   expect_identical(file.mtime(fixture()), mtime_fixture)

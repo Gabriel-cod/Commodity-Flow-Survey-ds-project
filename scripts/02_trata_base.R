@@ -77,8 +77,26 @@ obter_base_tratada <- function(pipeline = TRUE,
   if (!is.logical(pipeline) || length(pipeline) != 1 || is.na(pipeline)) {
     stop("pipeline deve ser TRUE ou FALSE", call. = FALSE)
   }
-  if (!pipeline) stop("pipeline = FALSE ainda não implementado", call. = FALSE)
+  if (pipeline) .obter_temporaria(origem, arquivo_regras)
+  else .obter_gravada(origem, destino, arquivo_regras)
+}
 
+fechar_base <- function(base) {
+  con <- if (inherits(base, "tbl_lazy")) dbplyr::remote_con(base) else base
+  id <- .achar_registro(con)
+  entrada <- if (!is.null(id)) get(id, envir = .registro())
+
+  desconectar_bd(con)
+  if (!is.null(id)) rm(list = id, envir = .registro())
+  if (identical(entrada$tipo, "temporario")) {
+    unlink(c(entrada$arquivo, paste0(entrada$arquivo, ".wal")))
+  }
+  invisible(NULL)
+}
+
+# Internas ----------------------------------------------------------------
+
+.obter_temporaria <- function(origem, arquivo_regras) {
   .exigir_origem(origem)
   regras <- .carregar_regras(arquivo_regras)
   regras$.conferir_cabecalho(origem)
@@ -96,20 +114,113 @@ obter_base_tratada <- function(pipeline = TRUE,
   dplyr::tbl(con, "cfs_tratada")
 }
 
-fechar_base <- function(base) {
-  con <- if (inherits(base, "tbl_lazy")) dbplyr::remote_con(base) else base
-  id <- .achar_registro(con)
-  entrada <- if (!is.null(id)) get(id, envir = .registro())
+.obter_gravada <- function(origem, destino, arquivo_regras) {
+  hash <- hash_regras(arquivo_regras)
 
-  desconectar_bd(con)
-  if (!is.null(id)) rm(list = id, envir = .registro())
-  if (identical(entrada$tipo, "temporario")) {
-    unlink(c(entrada$arquivo, paste0(entrada$arquivo, ".wal")))
+  if (file.exists(destino)) {
+    con <- .abrir(destino, read_only = TRUE)
+    .registrar(con, destino, "gravada")
+    meta <- .ler_metadados(con)
+    if (.base_atual(con, meta, hash, origem)) {
+      message("Base tratada | origem: gravada (atual) | hash: ", hash,
+              " | processada em: ", format(meta$processado_em), " | linhas: ", meta$n_linhas)
+      return(dplyr::tbl(con, "cfs_tratada"))
+    }
+    fechar_base(con)
   }
-  invisible(NULL)
+  message("Base gravada ausente ou desatualizada: reprocessando")
+
+  regras <- .gravar(origem, destino, arquivo_regras)
+
+  con <- .abrir(destino, read_only = TRUE)
+  .registrar(con, destino, "gravada")
+  meta <- .ler_metadados(con)
+  # No mesmo processo, uma conexao aberta fora do registro faz o duckdb
+  # reaproveitar a instancia antiga e reler a versao anterior do arquivo.
+  if (is.null(meta) || !identical(meta$hash_regras, regras$hash)) {
+    fechar_base(con)
+    stop("A base reaberta tem hash diferente do atual; feche as bases abertas com ",
+         "fechar_base() ou reinicie o R", call. = FALSE)
+  }
+  message("Base tratada | origem: gravada (reprocessada) | hash: ", regras$hash,
+          " | linhas: ", meta$n_linhas)
+  dplyr::tbl(con, "cfs_tratada")
 }
 
-# Internas ----------------------------------------------------------------
+.base_atual <- function(con, meta, hash, origem) {
+  if (is.null(meta) || !identical(meta$hash_regras, hash)) return(FALSE)
+  n <- DBI::dbGetQuery(con, "SELECT count(*) AS n FROM cfs_tratada")$n
+  if (meta$n_linhas != n) return(FALSE)
+
+  if (!file.exists(origem)) {
+    warning("origem ausente: não foi possível conferir a origem da base gravada", call. = FALSE)
+    return(TRUE)
+  }
+  identical(meta$arquivo_origem, .relativo(origem)) &&
+    meta$origem_tamanho == file.size(origem) &&
+    meta$origem_modificado_em == .mtime_s(origem)
+}
+
+.ler_metadados <- function(con) {
+  if (!"metadados" %in% DBI::dbListTables(con)) return(NULL)
+  DBI::dbGetQuery(con, "SELECT * FROM metadados")
+}
+
+# Grava num temporario ao lado do destino e so troca por rename depois do
+# CHECKPOINT: o destino fica completo ou intacto, nunca pela metade.
+.gravar <- function(origem, destino, arquivo_regras) {
+  .exigir_origem(origem)
+  .conferir_destino(destino, origem)
+
+  abertas <- .conexoes_do_arquivo(destino)
+  if (length(abertas)) {
+    message("Fechando ", length(abertas),
+            " conexão(ões) abertas da base gravada antes de reprocessar")
+    for (con in abertas) fechar_base(con)
+  }
+
+  regras <- .carregar_regras(arquivo_regras)
+  regras$.conferir_cabecalho(origem)
+
+  dir.create(dirname(destino), recursive = TRUE, showWarnings = FALSE)
+  tmp <- paste0(destino, ".tmp-", Sys.getpid())
+  unlink(c(tmp, paste0(tmp, ".wal")))
+  con <- .abrir(tmp)
+  concluido <- FALSE
+  on.exit(if (!concluido) {
+    desconectar_bd(con)
+    unlink(c(tmp, paste0(tmp, ".wal")))
+  })
+
+  n <- regras$.construir(con, origem)
+  DBI::dbExecute(con, "
+    CREATE TABLE metadados (
+      hash_regras VARCHAR, processado_em TIMESTAMP, n_linhas BIGINT,
+      arquivo_origem VARCHAR, origem_tamanho BIGINT, origem_modificado_em BIGINT
+    )")
+  DBI::dbExecute(con, "INSERT INTO metadados VALUES (?, now()::TIMESTAMP, ?, ?, ?, ?)",
+                 params = list(regras$hash, n, .relativo(origem),
+                               file.size(origem), .mtime_s(origem)))
+  DBI::dbExecute(con, "CHECKPOINT")
+  desconectar_bd(con)
+
+  if (!file.rename(tmp, destino)) {
+    stop("Não foi possível substituir ", .relativo(destino), call. = FALSE)
+  }
+  concluido <- TRUE
+  regras
+}
+
+.conferir_destino <- function(destino, origem) {
+  proibidas <- c(.abs(dirname(origem)), .abs(here::here("data", "raw")))
+  if (any(startsWith(.abs(destino), paste0(proibidas, "/")))) {
+    stop("O destino não pode ficar na pasta dos dados brutos", call. = FALSE)
+  }
+}
+
+# Segundos inteiros: a data com fracao de segundo nao sobrevive a ida e volta
+# por um TIMESTAMP do DuckDB, e a comparacao daria sempre falso.
+.mtime_s <- function(arquivo) floor(as.numeric(file.mtime(arquivo)))
 
 # Carrega as regras do proprio arquivo cujo hash vai ser usado: editar o
 # arquivo sem um novo source() nao pode gerar base com regra velha e hash novo.
@@ -215,10 +326,17 @@ fechar_base <- function(base) {
   DBI::dbConnect(duckdb::duckdb(), dbdir = arquivo, read_only = read_only)
 }
 
+# Caminho absoluto mesmo para arquivo que ainda nao existe (normalizePath so
+# resolve o que existe).
+.abs <- function(caminho) {
+  if (file.exists(caminho)) return(normalizePath(caminho))
+  file.path(.abs(dirname(caminho)), basename(caminho))
+}
+
 # Caminho relativo a raiz do projeto, ou so o nome do arquivo se estiver fora.
 .relativo <- function(caminho) {
-  raiz <- paste0(normalizePath(here::here(), mustWork = FALSE), "/")
-  abs <- normalizePath(caminho, mustWork = FALSE)
+  raiz <- paste0(normalizePath(here::here()), "/")
+  abs <- .abs(caminho)
   if (startsWith(abs, raiz)) substring(abs, nchar(raiz) + 1) else basename(abs)
 }
 
@@ -235,8 +353,16 @@ fechar_base <- function(base) {
 
 .registrar <- function(con, arquivo, tipo) {
   assign(basename(tempfile("con")),
-         list(con = con, arquivo = normalizePath(arquivo, mustWork = FALSE), tipo = tipo),
+         list(con = con, arquivo = .abs(arquivo), tipo = tipo),
          envir = .registro())
+}
+
+.conexoes_do_arquivo <- function(arquivo) {
+  registro <- .registro()
+  entradas <- mget(ls(registro, all.names = TRUE), envir = registro)
+  Filter(Negate(is.null), lapply(entradas, function(e) {
+    if (e$tipo == "gravada" && e$arquivo == .abs(arquivo)) e$con
+  }))
 }
 
 .achar_registro <- function(con) {
