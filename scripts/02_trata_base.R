@@ -55,6 +55,12 @@ PERCENTIS_RAZAO <- c(0.001, 0.999)
 LIBRA_EM_T      <- 0.00045359237
 MILHA_EM_KM     <- 1.609344
 
+FLAGS <- c(
+  "fl_sctg_colapsado", "fl_origem_ma_suprimida", "fl_origem_suprimida", "fl_exportacao",
+  "fl_intra_area", "fl_valor_teto", "fl_fator_teto", "fl_fator_menor_1", "fl_razao_atipica"
+)
+COLUNAS_TRATADAS <- c(names(TIPOS_CFS), "peso_t", "dist_km", FLAGS)
+
 ARQUIVO_REGRAS <- here::here("scripts", "02_trata_base.R")
 
 hash_regras <- function(arquivo_regras = ARQUIVO_REGRAS) {
@@ -125,10 +131,42 @@ fechar_base <- function(base) {
   leitura <- sprintf("read_csv(%s, header = true, columns = {%s})",
                      DBI::dbQuoteString(con, normalizePath(origem)), colunas)
 
-  DBI::dbExecute(con, sprintf(
-    "CREATE TABLE cfs_tratada AS SELECT %s FROM %s",
-    paste(names(TIPOS_CFS), collapse = ", "), leitura
+  DBI::dbExecute(con, sprintf("
+    CREATE TABLE cfs_tratada AS
+    WITH bruto AS (
+      SELECT *, SHIPMT_VALUE::DOUBLE / NULLIF(SHIPMT_WGHT, 0) AS razao FROM %s
+    ),
+    -- percentis da razao valor/peso dentro de cada SCTG, sem ponderacao
+    limites AS (
+      SELECT SCTG,
+             quantile_cont(razao, %s) AS razao_min,
+             quantile_cont(razao, %s) AS razao_max
+      FROM bruto GROUP BY SCTG
+    )
+    SELECT %s,
+      SHIPMT_WGHT * %s AS peso_t,
+      SHIPMT_DIST_GC * %s AS dist_km,
+      coalesce(SCTG = '00' OR contains(SCTG, '-'), false) AS fl_sctg_colapsado,
+      coalesce(ORIG_MA = '00000' AND ORIG_STATE <> '00', false) AS fl_origem_ma_suprimida,
+      coalesce(ORIG_STATE = '00', false) AS fl_origem_suprimida,
+      coalesce(EXPORT_YN = 'Y', false) AS fl_exportacao,
+      coalesce(ORIG_CFS_AREA = DEST_CFS_AREA, false) AS fl_intra_area,
+      coalesce(SHIPMT_VALUE >= %s, false) AS fl_valor_teto,
+      coalesce(WGT_FACTOR >= %s, false) AS fl_fator_teto,
+      coalesce(WGT_FACTOR < 1, false) AS fl_fator_menor_1,
+      coalesce(razao < razao_min OR razao > razao_max, false) AS fl_razao_atipica
+    FROM bruto JOIN limites USING (SCTG)",
+    leitura, .num(PERCENTIS_RAZAO[1]), .num(PERCENTIS_RAZAO[2]),
+    paste(names(TIPOS_CFS), collapse = ", "), .num(LIBRA_EM_T), .num(MILHA_EM_KM),
+    .num(TETO_VALOR), .num(TETO_FATOR)
   ))
+
+  colunas_lidas <- DBI::dbListFields(con, "cfs_tratada")
+  if (!identical(colunas_lidas, COLUNAS_TRATADAS)) {
+    stop("Colunas inesperadas na base tratada.",
+         "\n  lidas:     ", paste(colunas_lidas, collapse = ","),
+         "\n  esperadas: ", paste(COLUNAS_TRATADAS, collapse = ","), call. = FALSE)
+  }
 
   n <- DBI::dbGetQuery(con, "SELECT count(*) AS n FROM cfs_tratada")$n
   n_csv <- DBI::dbGetQuery(con, sprintf("SELECT count(*) AS n FROM %s", leitura))$n
@@ -164,6 +202,8 @@ fechar_base <- function(base) {
          paste(names(contagem), contagem, sep = " = ", collapse = "; "), call. = FALSE)
   }
 }
+
+.num <- function(x) format(x, scientific = FALSE, digits = 15)
 
 .exigir_origem <- function(origem) {
   if (!file.exists(origem)) {

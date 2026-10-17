@@ -31,6 +31,43 @@ test_that("base tem o mesmo numero de linhas do CSV (T-T3)", {
   expect_equal(nrow(coletar(origem = fixture())), 20)
 })
 
+test_that("base tem exatamente as colunas tratadas, na ordem (T-T4)", {
+  base <- suppressMessages(obter_base_tratada(origem = fixture()))
+  on.exit(fechar_base(base))
+  expect_identical(colnames(base), COLUNAS_TRATADAS)
+})
+
+test_that("cada flag marca exatamente as linhas projetadas na fixture (T-T5)", {
+  df <- coletar(origem = fixture())
+  ids_verdadeiros <- function(flag) as.integer(df$SHIPMT_ID[df[[flag]]])
+
+  expect_identical(ids_verdadeiros("fl_sctg_colapsado"), c(3L, 4L))
+  expect_identical(ids_verdadeiros("fl_origem_ma_suprimida"), 3L)
+  expect_identical(ids_verdadeiros("fl_origem_suprimida"), 4L)
+  expect_identical(ids_verdadeiros("fl_exportacao"), 5L)
+  expect_identical(ids_verdadeiros("fl_intra_area"), c(2L, 5L, 9L))
+  expect_identical(ids_verdadeiros("fl_valor_teto"), c(6L, 7L))
+  expect_identical(ids_verdadeiros("fl_fator_teto"), 8L)
+  expect_identical(ids_verdadeiros("fl_fator_menor_1"), 9L)
+  # grupo SCTG 35 tem razoes 1..10: so as pontas passam dos percentis 0,1/99,9
+  expect_identical(ids_verdadeiros("fl_razao_atipica"), c(11L, 20L))
+})
+
+test_that("flags sao logicas e nunca nulas (T-T6)", {
+  df <- coletar(origem = fixture())
+  for (flag in FLAGS) {
+    expect_type(df[[flag]], "logical")
+    expect_false(anyNA(df[[flag]]), info = flag)
+  }
+})
+
+test_that("derivadas convertem para toneladas metricas e km (T-T7)", {
+  df <- coletar(origem = fixture())
+  expect_equal(df$peso_t, df$SHIPMT_WGHT * LIBRA_EM_T)
+  expect_equal(df$dist_km, df$SHIPMT_DIST_GC * MILHA_EM_KM)
+  expect_equal(df$peso_t[1], 100 * 0.45359237 / 1000)
+})
+
 test_that("pipeline = TRUE nao grava o destino (T-F1)", {
   destino <- file.path(withr::local_tempdir(), "base.duckdb")
   coletar(origem = fixture(), destino = destino)
