@@ -5,7 +5,6 @@
 pacotes <- c(
   "here",        # caminhos relativos a raiz do projeto
   "config",      # ambientes do config.yml
-  "data.table",  # leitura de CSV grande (fread/fwrite)
   "tidyverse",   # dplyr, ggplot2, tidyr, ...
   "readxl",      # dicionario .xlsx
   "DBI",         # interface generica de banco
@@ -22,7 +21,6 @@ if (length(faltando)) {
 
 suppressPackageStartupMessages({
   library(here)
-  library(data.table)
   library(tidyverse)
 })
 

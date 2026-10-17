@@ -70,10 +70,10 @@ pums |> count(TEMP_CNTL_YN) |> collect()
 pums |> count(EXPORT_YN)    |> collect()
 pums |> count(HAZMAT)       |> collect()
 
-# Amostra pequena para inspecao interativa no R --------------------------
-# (USING SAMPLE e do DuckDB; a amostra oficial do projeto vem do script 02)
-amostra_rapida <- consultar(con, "SELECT * FROM pums USING SAMPLE 100000 ROWS")
-glimpse(amostra_rapida)
-summary(amostra_rapida)
+# Recorte pequeno para inspecao interativa no R -------------------------
+# (USING SAMPLE e do DuckDB; a base tratada vem de scripts/02_trata_base.R)
+inspecao_rapida <- consultar(con, "SELECT * FROM pums USING SAMPLE 100000 ROWS")
+glimpse(inspecao_rapida)
+summary(inspecao_rapida)
 
 DBI::dbDisconnect(con, shutdown = TRUE)

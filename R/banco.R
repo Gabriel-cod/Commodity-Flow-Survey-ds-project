@@ -73,7 +73,7 @@ tabela_id <- function(tabela, schema = cfg("banco", "schema")) {
 }
 
 #' Consulta parametrizada. NUNCA use paste() para montar SQL com input externo.
-#' consultar(con, "SELECT * FROM cfs.amostra WHERE SECTOR = $1", list(42L))
+#' consultar(con, "SELECT * FROM cfs_tratada WHERE SECTOR = $1", list("42"))
 consultar <- function(con, sql, params = NULL) {
   DBI::dbGetQuery(con, sql, params = params)
 }
@@ -86,7 +86,7 @@ gravar_tabela <- function(con, dados, tabela, sobrescrever = TRUE) {
 }
 
 #' Referencia lazy para usar dplyr direto no banco (sem trazer tudo para a RAM).
-#' tbl_bd(con, "amostra") |> filter(SECTOR == 42) |> collect()
+#' tbl_bd(con, "cfs_tratada") |> filter(SECTOR == "42") |> collect()
 tbl_bd <- function(con, tabela, schema = cfg("banco", "schema")) {
   sem_schema <- is.null(schema) || !nzchar(schema) || identical(schema, "main")
   if (sem_schema) dplyr::tbl(con, tabela)

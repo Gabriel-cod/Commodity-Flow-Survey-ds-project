@@ -9,7 +9,7 @@ cfg <- function(...) {
 }
 
 #' Caminho absoluto a partir da raiz do projeto.
-#' caminho("amostra") -> <raiz>/data/interim/amostra.csv
+#' caminho("base_tratada") -> <raiz>/data/processed/cfs_tratada.duckdb
 caminho <- function(chave) {
   here::here(cfg("caminhos", chave))
 }

@@ -4,12 +4,8 @@
 
 default:
   projeto: "commodity-flow-survey"
-  seed: 202602
-  tamanho_amostra: 200000
   caminhos:
     raw: "data/raw/cfs_2022_pums.csv"
-    amostra: "data/interim/amostra.csv"
-    amostra_dicio: "data/processed/amostra_dicio.csv"
     base_tratada: "data/processed/cfs_tratada.duckdb"
     dicionario: "data/external/dicionario.xlsx"
   # Banco padrao: DuckDB local, funciona sem .Renviron e sem rede.
