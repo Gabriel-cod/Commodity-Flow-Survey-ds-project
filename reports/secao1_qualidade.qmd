@@ -169,8 +169,7 @@ faixa <- q("SELECT min(SHIPMT_VALUE) AS vmin, max(SHIPMT_VALUE) AS vmax, min(SHI
             FROM cfs_tratada")
 divisa <- q("SELECT count(*) AS n FROM cfs_tratada
              WHERE ORIG_STATE <> '00' AND ORIG_STATE <> DEST_STATE AND SHIPMT_DIST_GC <= 1")$n
-pequenos <- q(sprintf("SELECT SCTG, count(*) AS linhas, sum(fl_razao_atipica::INT) AS atipicas
-                       FROM cfs_tratada GROUP BY 1 HAVING count(*) < 1000 ORDER BY 2"))
+pequenos <- q("SELECT SCTG FROM cfs_tratada GROUP BY 1 HAVING count(*) < 1000 ORDER BY count(*)")
 ```
 
 | Variável | Mínimo | Máximo |

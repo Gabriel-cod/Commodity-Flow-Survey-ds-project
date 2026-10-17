@@ -105,7 +105,6 @@ fechar_base <- function(base) {
 .obter_temporaria <- function(origem, arquivo_regras) {
   .exigir_origem(origem)
   regras <- .carregar_regras(arquivo_regras)
-  regras$.conferir_cabecalho(origem)
 
   arquivo <- tempfile("cfs_tratada_", fileext = ".duckdb")
   con <- .abrir(arquivo)
@@ -186,7 +185,6 @@ fechar_base <- function(base) {
   }
 
   regras <- .carregar_regras(arquivo_regras)
-  regras$.conferir_cabecalho(origem)
 
   dir.create(dirname(destino), recursive = TRUE, showWarnings = FALSE)
   tmp <- paste0(destino, ".tmp-", Sys.getpid())
@@ -244,6 +242,7 @@ fechar_base <- function(base) {
 }
 
 .construir <- function(con, origem) {
+  .conferir_cabecalho(origem)
   .ajustar_memoria(con)
   colunas <- paste(sprintf("'%s': '%s'", names(TIPOS_CFS), TIPOS_CFS), collapse = ", ")
   leitura <- sprintf("read_csv(%s, header = true, columns = {%s})",
