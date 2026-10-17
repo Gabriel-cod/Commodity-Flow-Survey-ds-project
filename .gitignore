@@ -26,6 +26,8 @@ data/processed/*
 !data/**/README.md
 # data/external/ (dicionario e lookups pequenos) fica versionado.
 data/*.duckdb
+*.duckdb
+*.wal
 data/*.sqlite
 data/*.sqlite3
 

@@ -233,16 +233,17 @@ As unidades originais ficam na base, para comparar com as tabelas oficiais do Ce
 
 ```{r}
 #| label: raras
-menores <- function(col, filtro = "TRUE") {
+menores <- function(col, so_areas_identificadas = FALSE) {
+  filtro <- if (so_areas_identificadas) "ORIG_MA <> '00000'" else "TRUE"
   r <- q(sprintf("SELECT %s, count(*) AS linhas FROM cfs_tratada WHERE %s GROUP BY 1 ORDER BY 2 LIMIT 5",
-                 col, filtro))
+                 DBI::dbQuoteIdentifier(con, col), filtro))
   r <- rotular(r, dic, col)
   data.frame(Código = r[[col]], Descrição = r[[paste0(col, "_desc")]],
              Linhas = r$linhas, `% das linhas` = pct(r$linhas, n_total, 4), check.names = FALSE)
 }
 tabela(menores("MODE"), caption = "Modais (MODE) com menos linhas")
 tabela(menores("SCTG"), caption = "Mercadorias (SCTG) com menos linhas")
-tabela(menores("ORIG_CFS_AREA", "ORIG_MA <> '00000'"),
+tabela(menores("ORIG_CFS_AREA", so_areas_identificadas = TRUE),
        caption = "Áreas de origem identificadas (ORIG_CFS_AREA) com menos linhas")
 ```
 

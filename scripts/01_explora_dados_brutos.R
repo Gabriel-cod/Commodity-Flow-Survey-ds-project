@@ -18,8 +18,8 @@ con <- DBI::dbConnect(duckdb::duckdb(shared_home = TRUE))
 # SHIPMT_ID e forcado a texto para preservar os zeros a esquerda ("00000001").
 DBI::dbExecute(con, sprintf(
   "CREATE VIEW pums AS
-   SELECT * FROM read_csv_auto('%s', types = {'SHIPMT_ID': 'VARCHAR'})",
-  caminho("raw")
+   SELECT * FROM read_csv_auto(%s, types = {'SHIPMT_ID': 'VARCHAR'})",
+  DBI::dbQuoteString(con, caminho("raw"))
 ))
 
 pums <- tbl(con, "pums")  # referencia lazy: nao carrega nada ainda
