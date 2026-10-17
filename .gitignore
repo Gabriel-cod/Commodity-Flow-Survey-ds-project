@@ -33,6 +33,11 @@ data/*.sqlite3
 outputs/figures/*
 outputs/tables/*
 !outputs/**/.gitkeep
+reports/*.html
+reports/*.pdf
+reports/*_files/
+reports/renv/
+reports/.quarto/
 
 # ---- Sistema ----
 .DS_Store
