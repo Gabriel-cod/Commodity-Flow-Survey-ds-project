@@ -55,11 +55,12 @@ PERCENTIS_RAZAO <- c(0.001, 0.999)
 LIBRA_EM_T      <- 0.00045359237
 MILHA_EM_KM     <- 1.609344
 
-# Tratamento completo em uma passada atinge ~15,2 GB de RAM (medido). Com menos
-# memoria, o DuckDB recebe um limite e processa por partes, gravando o excedente
-# em disco: mesmo resultado, mais lento (6 GB: 166 s; 3 GB: 265 s; sem limite: 24 s).
-MEMORIA_UM_PASSO_GIB <- 16
-FRACAO_RAM_LIMITE    <- 0.5
+# Montagem em blocos com limite fixo, para caber numa maquina de 6 GiB. Medido
+# num cgroup de 6 GiB: pico de 2,0 GiB e ~140 s. Em uma passada sem limite eram
+# 15,2 GB; mais threads nao aceleram os blocos e so gastam memoria.
+LIMITE_MEMORIA <- "1GiB"
+THREADS_DUCKDB <- 2
+LINHAS_BLOCO   <- 4000000
 
 FLAGS <- c(
   "fl_sctg_colapsado", "fl_origem_ma_suprimida", "fl_origem_suprimida", "fl_exportacao",
@@ -73,10 +74,13 @@ hash_regras <- function(arquivo_regras = ARQUIVO_REGRAS) {
   if (!file.exists(arquivo_regras)) {
     stop("Arquivo de regras não encontrado: ", .relativo(arquivo_regras), call. = FALSE)
   }
-  unname(tools::md5sum(arquivo_regras))
+  # Sem \r: o Git no Windows pode trocar LF por CRLF, e o hash mudaria sem
+  # nenhuma regra mudar.
+  bytes <- readBin(arquivo_regras, "raw", file.size(arquivo_regras))
+  unname(tools::md5sum(bytes = bytes[bytes != as.raw(13)]))
 }
 
-obter_base_tratada <- function(pipeline = TRUE,
+obter_base_tratada <- function(pipeline = FALSE,
                                origem = caminho("raw"),
                                destino = caminho("base_tratada"),
                                arquivo_regras = ARQUIVO_REGRAS) {
@@ -161,9 +165,12 @@ fechar_base <- function(base) {
     warning("origem ausente: não foi possível conferir a origem da base gravada", call. = FALSE)
     return(TRUE)
   }
-  identical(meta$arquivo_origem, .relativo(origem)) &&
-    meta$origem_tamanho == file.size(origem) &&
-    meta$origem_modificado_em == .mtime_s(origem)
+  if (!identical(meta$arquivo_origem, .relativo(origem)) ||
+      meta$origem_tamanho != file.size(origem)) return(FALSE)
+  if (meta$origem_modificado_em == .mtime_s(origem)) return(TRUE)
+  # Data diferente com o mesmo tamanho: base copiada de outra maquina ou CSV
+  # baixado de novo. Quem decide e o conteudo.
+  identical(meta$origem_md5, unname(tools::md5sum(origem)))
 }
 
 .ler_metadados <- function(con) {
@@ -200,11 +207,12 @@ fechar_base <- function(base) {
   DBI::dbExecute(con, "
     CREATE TABLE metadados (
       hash_regras VARCHAR, processado_em TIMESTAMP, n_linhas BIGINT,
-      arquivo_origem VARCHAR, origem_tamanho BIGINT, origem_modificado_em BIGINT
+      arquivo_origem VARCHAR, origem_tamanho BIGINT, origem_modificado_em BIGINT,
+      origem_md5 VARCHAR
     )")
-  DBI::dbExecute(con, "INSERT INTO metadados VALUES (?, now()::TIMESTAMP, ?, ?, ?, ?)",
-                 params = list(regras$hash, n, .relativo(origem),
-                               file.size(origem), .mtime_s(origem)))
+  DBI::dbExecute(con, "INSERT INTO metadados VALUES (?, now()::TIMESTAMP, ?, ?, ?, ?, ?)",
+                 params = list(regras$hash, n, .relativo(origem), file.size(origem),
+                               .mtime_s(origem), unname(tools::md5sum(origem))))
   DBI::dbExecute(con, "CHECKPOINT")
   desconectar_bd(con)
 
@@ -241,25 +249,44 @@ fechar_base <- function(base) {
   regras
 }
 
-.construir <- function(con, origem) {
+.construir <- function(con, origem, linhas_bloco = LINHAS_BLOCO) {
   .conferir_cabecalho(origem)
-  .ajustar_memoria(con)
   colunas <- paste(sprintf("'%s': '%s'", names(TIPOS_CFS), TIPOS_CFS), collapse = ", ")
   leitura <- sprintf("read_csv(%s, header = true, columns = {%s})",
                      DBI::dbQuoteString(con, normalizePath(origem)), colunas)
 
+  # Limite so durante a montagem: a conexao devolvida consulta sem ele.
+  message("Montando a base em blocos (limite de ", LIMITE_MEMORIA, ", ~2 a 3 min)")
+  DBI::dbExecute(con, sprintf("SET memory_limit = '%s'", LIMITE_MEMORIA))
+  DBI::dbExecute(con, sprintf("SET threads = %d", THREADS_DUCKDB))
+  DBI::dbExecute(con, "SET preserve_insertion_order = false")
+  on.exit(for (opcao in c("memory_limit", "threads", "preserve_insertion_order")) {
+    try(DBI::dbExecute(con, paste("RESET", opcao)), silent = TRUE)
+  })
+
+  # O CSV e lido uma vez para um preparo ao lado da base, apagado no fim; os
+  # percentis e os blocos leem dele.
+  preparo <- paste0(con@driver@dbdir, ".stg")
+  unlink(c(preparo, paste0(preparo, ".wal")))
+  DBI::dbExecute(con, sprintf("ATTACH %s AS preparo", DBI::dbQuoteString(con, preparo)))
+  on.exit({
+    try(DBI::dbExecute(con, "DETACH preparo"), silent = TRUE)
+    unlink(c(preparo, paste0(preparo, ".wal")))
+  }, add = TRUE)
+
   DBI::dbExecute(con, sprintf("
-    CREATE TABLE cfs_tratada AS
-    WITH bruto AS (
-      SELECT *, SHIPMT_VALUE::DOUBLE / NULLIF(SHIPMT_WGHT, 0) AS razao FROM %s
-    ),
-    -- percentis da razao valor/peso dentro de cada SCTG, sem ponderacao
-    limites AS (
-      SELECT SCTG,
-             quantile_cont(razao, %s) AS razao_min,
-             quantile_cont(razao, %s) AS razao_max
-      FROM bruto GROUP BY SCTG
-    )
+    CREATE TABLE preparo.bruto AS
+    SELECT *, SHIPMT_VALUE::DOUBLE / NULLIF(SHIPMT_WGHT, 0) AS razao FROM %s", leitura))
+  # percentis da razao valor/peso dentro de cada SCTG, sem ponderacao
+  DBI::dbExecute(con, sprintf("
+    CREATE TEMP TABLE limites AS
+    SELECT SCTG,
+           quantile_cont(razao, %s) AS razao_min,
+           quantile_cont(razao, %s) AS razao_max
+    FROM preparo.bruto GROUP BY SCTG",
+    .num(PERCENTIS_RAZAO[1]), .num(PERCENTIS_RAZAO[2])))
+
+  selecao <- sprintf("
     SELECT %s,
       SHIPMT_WGHT * %s AS peso_t,
       SHIPMT_DIST_GC * %s AS dist_km,
@@ -272,11 +299,18 @@ fechar_base <- function(base) {
       coalesce(WGT_FACTOR >= %s, false) AS fl_fator_teto,
       coalesce(WGT_FACTOR < 1, false) AS fl_fator_menor_1,
       coalesce(razao < razao_min OR razao > razao_max, false) AS fl_razao_atipica
-    FROM bruto JOIN limites USING (SCTG)",
-    leitura, .num(PERCENTIS_RAZAO[1]), .num(PERCENTIS_RAZAO[2]),
+    FROM preparo.bruto JOIN limites USING (SCTG)",
     paste(names(TIPOS_CFS), collapse = ", "), .num(LIBRA_EM_T), .num(MILHA_EM_KM),
-    .num(TETO_VALOR), .num(TETO_FATOR)
-  ))
+    .num(TETO_VALOR), .num(TETO_FATOR))
+
+  DBI::dbExecute(con, paste("CREATE TABLE cfs_tratada AS", selecao, "LIMIT 0"))
+  n_csv <- DBI::dbGetQuery(con, "SELECT count(*) AS n FROM preparo.bruto")$n
+  for (inicio in (seq_len(ceiling(n_csv / linhas_bloco)) - 1) * linhas_bloco) {
+    DBI::dbExecute(con, sprintf(
+      "INSERT INTO cfs_tratada %s WHERE preparo.bruto.rowid >= %s AND preparo.bruto.rowid < %s",
+      selecao, .num(inicio), .num(inicio + linhas_bloco)))
+  }
+  DBI::dbExecute(con, "DROP TABLE limites")
 
   colunas_lidas <- DBI::dbListFields(con, "cfs_tratada")
   if (!identical(colunas_lidas, COLUNAS_TRATADAS)) {
@@ -285,8 +319,8 @@ fechar_base <- function(base) {
          "\n  esperadas: ", paste(COLUNAS_TRATADAS, collapse = ","), call. = FALSE)
   }
 
+  # Tambem pega linhas perdidas na juncao ou fora dos blocos.
   n <- DBI::dbGetQuery(con, "SELECT count(*) AS n FROM cfs_tratada")$n
-  n_csv <- DBI::dbGetQuery(con, sprintf("SELECT count(*) AS n FROM %s", leitura))$n
   if (n != n_csv) {
     stop("A base tratada tem ", n, " linhas, mas o CSV tem ", n_csv, call. = FALSE)
   }
@@ -322,38 +356,6 @@ fechar_base <- function(base) {
 
 .num <- function(x) format(x, scientific = FALSE, digits = 15)
 
-# O memory_limit padrao do DuckDB e 80% da RAM fisica, em qualquer sistema:
-# serve de medida da memoria da maquina.
-.ajustar_memoria <- function(con) {
-  padrao <- .em_gib(DBI::dbGetQuery(con, "SELECT current_setting('memory_limit') AS m")$m)
-  limite <- .limite_memoria(padrao)
-  if (is.null(limite)) {
-    message("Memória: uma passada (limite padrão do DuckDB: ", round(padrao, 1), " GiB)")
-    return(invisible(NULL))
-  }
-  excedente <- file.path(tempdir(), "cfs_duckdb_excedente")
-  dir.create(excedente, showWarnings = FALSE)
-  DBI::dbExecute(con, sprintf("SET memory_limit = '%sGiB'", .num(limite)))
-  DBI::dbExecute(con, sprintf("SET temp_directory = %s", DBI::dbQuoteString(con, excedente)))
-  message("Memória: limite de ", limite, " GiB com excedente em disco (mais lento, mesmo resultado)")
-}
-
-# NULL = cabe numa passada; senao, o limite em GiB.
-.limite_memoria <- function(padrao_gib) {
-  if (padrao_gib >= MEMORIA_UM_PASSO_GIB) return(NULL)
-  floor(padrao_gib / 0.8 * FRACAO_RAM_LIMITE * 10) / 10
-}
-
-.em_gib <- function(texto) {
-  partes <- regmatches(texto, regexec("^\\s*([0-9.]+)\\s*([A-Za-z]+)\\s*$", texto))[[1]]
-  fatores <- c(bytes = 1 / 1024^3, KiB = 1 / 1024^2, MiB = 1 / 1024, GiB = 1, TiB = 1024,
-               KB = 1e3 / 1024^3, MB = 1e6 / 1024^3, GB = 1e9 / 1024^3, TB = 1e12 / 1024^3)
-  if (length(partes) != 3 || !partes[3] %in% names(fatores)) {
-    stop("Limite de memória do DuckDB em formato desconhecido: ", texto, call. = FALSE)
-  }
-  as.numeric(partes[2]) * fatores[[partes[3]]]
-}
-
 .exigir_origem <- function(origem) {
   if (!file.exists(origem)) {
     stop("Arquivo de origem não encontrado: ", .relativo(origem), call. = FALSE)
@@ -365,15 +367,16 @@ fechar_base <- function(base) {
 }
 
 # Caminho absoluto mesmo para arquivo que ainda nao existe (normalizePath so
-# resolve o que existe).
+# resolve o que existe). Sempre com "/": no Windows o padrao e "\\", e o caminho
+# relativo gravado nos metadados nao bateria entre maquinas.
 .abs <- function(caminho) {
-  if (file.exists(caminho)) return(normalizePath(caminho))
+  if (file.exists(caminho)) return(normalizePath(caminho, winslash = "/"))
   file.path(.abs(dirname(caminho)), basename(caminho))
 }
 
 # Caminho relativo a raiz do projeto, ou so o nome do arquivo se estiver fora.
 .relativo <- function(caminho) {
-  raiz <- paste0(normalizePath(here::here()), "/")
+  raiz <- paste0(normalizePath(here::here(), winslash = "/"), "/")
   abs <- .abs(caminho)
   if (startsWith(abs, raiz)) substring(abs, nchar(raiz) + 1) else basename(abs)
 }

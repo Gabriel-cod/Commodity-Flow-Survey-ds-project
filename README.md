@@ -304,26 +304,28 @@ Ela segue quatro passos:
 
 O parâmetro `pipeline` só escolhe **de onde** vem a base:
 
-- **`pipeline = TRUE`** é o padrão atual. A função refaz tudo do zero num arquivo temporário e o
-  apaga ao fechar. Isso garante que o resultado sai do código atual, enquanto o professor ainda não
-  validou o tratamento.
-- **`pipeline = FALSE`** guarda a base em `data/processed/` e a reaproveita nas próximas vezes. A
-  função **refaz a base sozinha** em três casos:
+- **`pipeline = FALSE`** é o padrão. A função guarda a base em `data/processed/` e a reaproveita
+  nas próximas vezes. Ela **refaz a base sozinha** em três casos:
   - quando ela não existe;
   - quando o arquivo de regras mudou;
   - quando o CSV mudou.
 
   Ela percebe que as regras mudaram por uma "impressão digital" (*hash*) do arquivo
-  `scripts/02_trata_base.R`, gravada junto com a base.
-- **Depois que o professor validar**, o padrão passa a ser `FALSE`.
+  `scripts/02_trata_base.R`, gravada junto com a base. E percebe que o CSV mudou pelo tamanho, pela
+  data e, se a data for outra, pela impressão digital do próprio CSV. Assim, **uma cópia da base
+  feita em outro computador vale**, sem ser refeita.
+- **`pipeline = TRUE`** refaz tudo do zero num arquivo temporário e o apaga ao fechar. Serve para
+  conferir o tratamento, não para o dia a dia: são 2 minutos a cada chamada.
 
-**Memória.** Feito de uma vez, o tratamento usa cerca de 15 GB de RAM e leva uns 25 segundos. Em
-computadores com menos memória, a função percebe isso sozinha e processa por partes, usando o
-disco. O resultado é idêntico e o tempo sobe para 3 a 5 minutos. A mensagem `Memória: ...` informa o
-modo usado.
+**Memória.** A base é montada em blocos de 4 milhões de linhas, com o DuckDB limitado a 1 GiB de
+memória e 2 núcleos. O pico fica em torno de 2 GiB e a montagem leva uns 2 minutos, em qualquer
+computador com 6 GiB de RAM ou mais.
 
 *Por quê:* a função precisa funcionar no computador de qualquer integrante e no do professor, não
-só no de quem a escreveu.
+só no de quem a escreveu. A primeira versão limitava a memória a metade da RAM, mas o DuckDB passa
+um pouco do limite; num computador de cerca de 12 GiB, somado ao sistema e ao RStudio, faltou memória e a
+máquina travou. Medimos a montagem em blocos simulando um computador de 6 GiB, e o resultado é
+idêntico ao de antes.
 
 ##### Os 10 itens verificados
 
@@ -515,14 +517,17 @@ source(here::here("scripts", "02_trata_base.R"))
 base <- obter_base_tratada(pipeline = FALSE)
 ```
 
-Na primeira vez, a função monta a base e a grava em `data/processed/`. Isso leva de 25 segundos a 5
-minutos, conforme a memória do computador. Nas vezes seguintes, ela abre na hora.
+Na primeira vez, a função monta a base e a grava em `data/processed/`, em uns 2 minutos. Nas vezes
+seguintes, ela abre na hora. Para pular a montagem, copie o arquivo `data/processed/cfs_tratada.duckdb`
+de quem já tem a base, com o mesmo commit e o mesmo CSV.
 
 **Passo 3 — Consultar**
 
 A `base` é "preguiçosa": as consultas rodam dentro do DuckDB, e só o `collect()` traz o resultado
 para o R. **Nunca dê `collect()` na base inteira**, porque são 37,5 milhões de linhas. Resuma
-primeiro, depois colete.
+primeiro, depois colete. Atenção: `group_by()` sozinho não resume nada; sem um `summarise()` ou
+`count()` depois dele, o `collect()` traz todas as linhas e passa de 10 GB. Para espiar a base, use
+`view(base)` (minúsculo, mostra 1.000 linhas) ou `base |> head(100) |> collect()`.
 
 ```r
 # Seção 2 — dimensão: linhas da base e da população de uma análise
@@ -616,8 +621,8 @@ Quando uma regra não estiver na tabela, decida com o Gabriel e acrescente a lin
 
 | Parâmetro | O que faz |
 |---|---|
-| `pipeline = TRUE` (padrão atual) | Trata o CSV num arquivo temporário e não grava nada em `data/processed/` |
-| `pipeline = FALSE` | Usa `data/processed/cfs_tratada.duckdb` se estiver atual. Se faltar, ou se as regras ou o CSV mudaram, trata de novo e grava |
+| `pipeline = FALSE` (padrão) | Usa `data/processed/cfs_tratada.duckdb` se estiver atual, inclusive uma cópia vinda de outro computador. Se faltar, ou se as regras ou o CSV mudaram, trata de novo e grava |
+| `pipeline = TRUE` | Trata o CSV num arquivo temporário e não grava nada em `data/processed/` |
 
 `fechar_base(base)` fecha a conexão com o banco e, no modo `TRUE`, apaga o arquivo temporário.
 

@@ -6,7 +6,7 @@ mtime_fixture <- file.mtime(fixture())
 
 # Base tratada da fixture, ja trazida para o R e fechada.
 coletar <- function(...) {
-  base <- suppressMessages(obter_base_tratada(...))
+  base <- suppressMessages(obter_base_tratada(pipeline = TRUE, ...))
   on.exit(fechar_base(base))
   dplyr::arrange(dplyr::collect(base), SHIPMT_ID)
 }
@@ -32,7 +32,7 @@ test_that("base tem o mesmo numero de linhas do CSV (T-T3)", {
 })
 
 test_that("base tem exatamente as colunas tratadas, na ordem (T-T4)", {
-  base <- suppressMessages(obter_base_tratada(origem = fixture()))
+  base <- suppressMessages(obter_base_tratada(pipeline = TRUE, origem = fixture()))
   on.exit(fechar_base(base))
   expect_identical(colnames(base), COLUNAS_TRATADAS)
 })
@@ -75,7 +75,7 @@ test_that("pipeline = TRUE nao grava o destino (T-F1)", {
 })
 
 test_that("fechar_base apaga o arquivo temporario (T-F2)", {
-  base <- suppressMessages(obter_base_tratada(origem = fixture()))
+  base <- suppressMessages(obter_base_tratada(pipeline = TRUE, origem = fixture()))
   arquivo <- dbplyr::remote_con(base)@driver@dbdir
   expect_true(file.exists(arquivo))
   fechar_base(base)
@@ -89,44 +89,47 @@ test_that("pipeline invalido gera erro (T-F9)", {
 
 test_that("cabecalho fora de ordem gera erro sem criar arquivo (T-F12)", {
   antes <- list.files(tempdir())
-  expect_error(obter_base_tratada(origem = fixture("cfs_mini_cabecalho_trocado.csv")),
+  expect_error(obter_base_tratada(pipeline = TRUE, origem = fixture("cfs_mini_cabecalho_trocado.csv")),
                "Cabeçalho inesperado")
   expect_setequal(list.files(tempdir()), antes)
 })
 
 test_that("codigo com largura invalida gera erro citando a coluna (T-F13)", {
   expect_error(
-    suppressMessages(obter_base_tratada(origem = fixture("cfs_mini_estado_curto.csv"))),
+    suppressMessages(obter_base_tratada(pipeline = TRUE, origem = fixture("cfs_mini_estado_curto.csv"))),
     "ORIG_STATE = 1"
   )
   expect_length(ls(.registro()), 0)
 })
 
-test_that("limite de memoria do DuckDB e convertido para GiB", {
-  expect_equal(.em_gib("24.8 GiB"), 24.8)
-  expect_equal(.em_gib("512 MiB"), 0.5)
-  expect_equal(.em_gib("2 TiB"), 2048)
-  expect_equal(.em_gib("8 GB"), 8e9 / 1024^3)
-  expect_error(.em_gib("muito"), "formato desconhecido")
+test_that("o padrao de pipeline e FALSE", {
+  expect_false(formals(obter_base_tratada)$pipeline)
 })
 
-test_that("uma passada com memoria suficiente; senao limite de metade da RAM", {
-  expect_null(.limite_memoria(24.8))
-  expect_null(.limite_memoria(MEMORIA_UM_PASSO_GIB))
-  # 12,8 GiB de padrao = 16 GiB de RAM -> limite de 8 GiB
-  expect_equal(.limite_memoria(12.8), 8)
-  expect_equal(.limite_memoria(6.2), 3.8)
-})
-
-test_that("modo por partes gera a mesma base que uma passada", {
+test_that("montagem em varios blocos gera a mesma base e nao deixa o preparo", {
   arquivo <- withr::local_tempfile(fileext = ".duckdb")
   con <- .abrir(arquivo)
   withr::defer(desconectar_bd(con))
-  DBI::dbExecute(con, "SET memory_limit = '2GiB'")
 
-  expect_message(.construir(con, fixture()), "excedente em disco")
-  por_partes <- dplyr::arrange(dplyr::collect(dplyr::tbl(con, "cfs_tratada")), SHIPMT_ID)
-  expect_equal(por_partes, coletar(origem = fixture()))
+  # 20 linhas em blocos de 7: tres blocos, o ultimo incompleto
+  expect_message(.construir(con, fixture(), linhas_bloco = 7), "em blocos")
+  em_blocos <- dplyr::arrange(dplyr::collect(dplyr::tbl(con, "cfs_tratada")), SHIPMT_ID)
+  expect_equal(em_blocos, coletar(origem = fixture()))
+  expect_false(file.exists(paste0(arquivo, ".stg")))
+
+  # o limite da montagem nao fica na conexao devolvida
+  padrao <- DBI::dbConnect(duckdb::duckdb())
+  withr::defer(DBI::dbDisconnect(padrao, shutdown = TRUE))
+  config <- function(c) DBI::dbGetQuery(c, "SELECT current_setting('threads') AS t,
+                                            current_setting('memory_limit') AS m")
+  expect_identical(config(con), config(padrao))
+})
+
+test_that("hash das regras ignora a troca de LF por CRLF", {
+  copia <- withr::local_tempfile(fileext = ".R")
+  writeLines(readLines(ARQUIVO_REGRAS), copia, sep = "\r\n")
+  expect_false(identical(tools::md5sum(copia), tools::md5sum(ARQUIVO_REGRAS)))
+  expect_identical(hash_regras(copia), hash_regras())
 })
 
 # Base gravada (pipeline = FALSE) -------------------------------------------
@@ -227,6 +230,46 @@ test_that("outra origem com o mesmo destino reprocessa (T-F11)", {
   b2 <- gravar(origem = fixture("cfs_mini_b.csv"), destino = destino)
   withr::defer(fechar_base(b2))
   expect_equal(metadados(b2)$n_linhas, 19)
+})
+
+# Origem fora do projeto: arquivo_origem fica so com o nome, igual nas duas copias.
+copiar_origem <- function(env = parent.frame()) {
+  origem <- file.path(withr::local_tempdir(.local_envir = env), "cfs.csv")
+  file.copy(fixture(), origem)
+  origem
+}
+
+test_that("CSV com outra data e o mesmo conteudo nao reprocessa", {
+  destino <- novo_destino()
+  origem <- copiar_origem()
+  b1 <- gravar(origem = origem, destino = destino)
+  antes <- metadados(b1)
+  fechar_base(b1)
+
+  # como numa copia da base para outra maquina, onde o CSV tem outra data
+  Sys.setFileTime(origem, Sys.time() - 86400)
+  b2 <- gravar(origem = origem, destino = destino)
+  withr::defer(fechar_base(b2))
+  expect_identical(antes$origem_md5, unname(tools::md5sum(origem)))
+  expect_equal(metadados(b2)$processado_em, antes$processado_em)
+})
+
+test_that("CSV com o mesmo tamanho e outro conteudo reprocessa", {
+  destino <- novo_destino()
+  origem <- copiar_origem()
+  b1 <- gravar(origem = origem, destino = destino)
+  antes <- metadados(b1)
+  fechar_base(b1)
+
+  linhas <- readLines(origem)
+  linhas[length(linhas)] <- sub("20\\.0$", "21.0", linhas[length(linhas)])
+  writeLines(linhas, origem)
+  expect_equal(file.size(origem), antes$origem_tamanho)
+  Sys.setFileTime(origem, Sys.time() - 86400)
+
+  b2 <- gravar(origem = origem, destino = destino)
+  withr::defer(fechar_base(b2))
+  expect_true(metadados(b2)$processado_em > antes$processado_em)
 })
 
 test_that("fechar_base nao apaga a base gravada (T-F14)", {
