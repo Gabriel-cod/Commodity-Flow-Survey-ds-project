@@ -88,10 +88,89 @@ test_that("pipeline invalido gera erro (T-F9)", {
 })
 
 test_that("cabecalho fora de ordem gera erro sem criar arquivo (T-F12)", {
-  antes <- list.files(tempdir())
-  expect_error(obter_base_tratada(pipeline = TRUE, origem = fixture("cfs_mini_cabecalho_trocado.csv")),
+  pasta <- withr::local_tempdir()
+  expect_error(obter_base_tratada(pipeline = TRUE, pasta_temporaria = pasta,
+                                  origem = fixture("cfs_mini_cabecalho_trocado.csv")),
                "Cabeçalho inesperado")
-  expect_setequal(list.files(tempdir()), antes)
+  expect_length(list.files(pasta, all.files = TRUE, no.. = TRUE), 0)
+})
+
+test_that("base temporaria fica na pasta do projeto, nunca no tempdir()", {
+  expect_identical(formals(obter_base_tratada)$pasta_temporaria, quote(caminho("interim")))
+  pasta <- withr::local_tempdir()
+  base <- suppressMessages(obter_base_tratada(pipeline = TRUE, origem = fixture(),
+                                              pasta_temporaria = pasta))
+  arquivo <- dbplyr::remote_con(base)@driver@dbdir
+  expect_identical(.abs(dirname(arquivo)), .abs(pasta))
+  fechar_base(base)
+  expect_length(list.files(pasta, all.files = TRUE, no.. = TRUE), 0)
+})
+
+test_that("sobras de sessoes encerradas sao apagadas; as da sessao viva ficam", {
+  pasta <- withr::local_tempdir()
+  # PID acima do maximo do Linux, do macOS e do Windows: nunca esta vivo
+  morta <- file.path(pasta, paste0(PREFIXO_TEMPORARIA, "2147483646_abc.duckdb"))
+  viva <- file.path(pasta, paste0(PREFIXO_TEMPORARIA, Sys.getpid(), "_abc.duckdb"))
+  file.create(c(morta, paste0(morta, ".wal"), viva))
+  dir.create(paste0(morta, ".tmp"))
+  dir.create(file.path(pasta, paste0(PREFIXO_EXCEDENTE, "2147483646")))
+
+  base <- suppressMessages(obter_base_tratada(pipeline = TRUE, origem = fixture(),
+                                              pasta_temporaria = pasta))
+  fechar_base(base)
+  expect_identical(list.files(pasta, all.files = TRUE, no.. = TRUE), basename(viva))
+})
+
+test_that("FALSE apaga a montagem gravada interrompida de outra sessao", {
+  destino <- file.path(withr::local_tempdir(), "base.duckdb")
+  morta <- paste0(destino, ".tmp-2147483646")
+  file.create(c(morta, paste0(morta, ".wal"), paste0(morta, ".stg")))
+
+  base <- suppressMessages(obter_base_tratada(pipeline = FALSE, origem = fixture(), destino = destino,
+                                              pasta_temporaria = withr::local_tempdir()))
+  fechar_base(base)
+  expect_identical(list.files(dirname(destino)), basename(destino))
+})
+
+test_that("percentis por SCTG batem com o quantil tipo 7 do R na fixture", {
+  df <- coletar(origem = fixture())
+  razao <- df$SHIPMT_VALUE / ifelse(df$SHIPMT_WGHT == 0, NA, df$SHIPMT_WGHT)
+  esperado <- unsplit(lapply(split(razao, df$SCTG), function(r) {
+    q <- quantile(r, PERCENTIS_RAZAO, type = 7, na.rm = TRUE, names = FALSE)
+    !is.na(r) & (r < q[1] | r > q[2])
+  }), df$SCTG)
+  expect_identical(df$fl_razao_atipica, esperado)
+})
+
+test_that("pasta de excedente so sai quando a ultima conexao da sessao fecha", {
+  pasta <- withr::local_tempdir()
+  excedente <- file.path(pasta, paste0(PREFIXO_EXCEDENTE, Sys.getpid()))
+  abrir <- function() suppressMessages(obter_base_tratada(pipeline = TRUE, origem = fixture(),
+                                                          pasta_temporaria = pasta))
+  a <- abrir()
+  b <- abrir()
+  dir.create(excedente, showWarnings = FALSE)
+  fechar_base(a)
+  expect_true(dir.exists(excedente))
+  fechar_base(b)
+  expect_false(dir.exists(excedente))
+})
+
+test_that("conexao devolvida consulta com limite e excedente no disco do projeto", {
+  pasta <- withr::local_tempdir()
+  base <- suppressMessages(obter_base_tratada(pipeline = TRUE, origem = fixture(),
+                                              pasta_temporaria = pasta))
+  on.exit(fechar_base(base))
+  con <- dbplyr::remote_con(base)
+  ajuste <- DBI::dbGetQuery(con, "SELECT current_setting('threads') AS t,
+                                         current_setting('temp_directory') AS d")
+  expect_equal(as.integer(ajuste$t), THREADS_CONSULTA)
+  expect_identical(ajuste$d, file.path(.abs(pasta), paste0(PREFIXO_EXCEDENTE, Sys.getpid())))
+  referencia <- DBI::dbConnect(duckdb::duckdb())
+  withr::defer(DBI::dbDisconnect(referencia, shutdown = TRUE))
+  DBI::dbExecute(referencia, sprintf("SET memory_limit = '%s'", LIMITE_CONSULTA))
+  limite <- function(c) DBI::dbGetQuery(c, "SELECT current_setting('memory_limit') AS m")$m
+  expect_identical(limite(con), limite(referencia))
 })
 
 test_that("codigo com largura invalida gera erro citando a coluna (T-F13)", {

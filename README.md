@@ -4,7 +4,7 @@
 dos Estados Unidos em 2022. Este repositório guarda o código que prepara os dados, os relatórios de
 cada check-in e o motivo de cada decisão tomada.**
 
-- **Equipe:** Gabriel Alves Silva (líder) e Gustavo Barco Pereira Santos.
+- **Equipe:** Gabriel Alves Silva (líder), Gustavo Barco Pereira Santos e Mirella.
 - **Professor:** Dr. G.
 - **Disciplina:** Introdução à Ciência de Dados, UFU, 2026/02.
 
@@ -315,17 +315,20 @@ O parâmetro `pipeline` só escolhe **de onde** vem a base:
   data e, se a data for outra, pela impressão digital do próprio CSV. Assim, **uma cópia da base
   feita em outro computador vale**, sem ser refeita.
 - **`pipeline = TRUE`** refaz tudo do zero num arquivo temporário e o apaga ao fechar. Serve para
-  conferir o tratamento, não para o dia a dia: são 2 minutos a cada chamada.
+  conferir o tratamento, não para o dia a dia: são uns 3,5 minutos a cada chamada.
 
-**Memória.** A base é montada em blocos de 4 milhões de linhas, com o DuckDB limitado a 1 GiB de
-memória e 2 núcleos. O pico fica em torno de 2 GiB e a montagem leva uns 2 minutos, em qualquer
-computador com 6 GiB de RAM ou mais.
+**Memória.** A base é montada em blocos de 1 milhão de linhas, com o DuckDB limitado a 512 MiB de
+memória e 1 núcleo. O pico fica abaixo de 1 GiB e a montagem leva uns 3,5 minutos, em qualquer
+computador com 4 GB de RAM ou mais. Os arquivos temporários ficam em `data/interim/`, no disco do
+projeto, e as consultas sobre a base também têm limite: o que passa dele vai para o disco.
 
 *Por quê:* a função precisa funcionar no computador de qualquer integrante e no do professor, não
-só no de quem a escreveu. A primeira versão limitava a memória a metade da RAM, mas o DuckDB passa
-um pouco do limite; num computador de cerca de 12 GiB, somado ao sistema e ao RStudio, faltou memória e a
-máquina travou. Medimos a montagem em blocos simulando um computador de 6 GiB, e o resultado é
-idêntico ao de antes.
+só no de quem a escreveu, e esses computadores podem ter só 4 GB. A primeira versão limitava a
+memória a metade da RAM, e a máquina do Gustavo travou. A segunda montava em blocos maiores, mas
+ainda travou com `pipeline = TRUE`: o arquivo temporário ia para o `/tmp`, que em muitos Linux fica
+na memória, e algumas contas (mediana, percentis, contagem de distintos) ignoravam o limite.
+Medimos tudo simulando um computador com 1,5 GiB livres, sem swap: a montagem, o reaproveitamento e
+o relatório da Seção 1 cabem, e os números são idênticos aos de antes.
 
 ##### Os 10 itens verificados
 
@@ -517,7 +520,7 @@ source(here::here("scripts", "02_trata_base.R"))
 base <- obter_base_tratada(pipeline = FALSE)
 ```
 
-Na primeira vez, a função monta a base e a grava em `data/processed/`, em uns 2 minutos. Nas vezes
+Na primeira vez, a função monta a base e a grava em `data/processed/`, em uns 3,5 minutos. Nas vezes
 seguintes, ela abre na hora. Para pular a montagem, copie o arquivo `data/processed/cfs_tratada.duckdb`
 de quem já tem a base, com o mesmo commit e o mesmo CSV.
 
@@ -615,6 +618,12 @@ Quando uma regra não estiver na tabela, decida com o Gabriel e acrescente a lin
 3. **Instale o [Quarto](https://quarto.org)**, só se for gerar relatórios. Confira o checksum do
    pacote baixado com o arquivo de checksums do mesmo *release*.
 
+**Windows e macOS.** O código não depende do Linux, mas só foi medido nele. No Windows, o
+`renv::restore()` baixa os pacotes já compilados do CRAN; no macOS, também, desde que o R seja o
+instalador oficial do CRAN. Deixe folga no disco do projeto: a base gravada tem 1,3 GB, e a
+montagem usa mais enquanto roda (o pico em disco ainda não foi medido). Na primeira vez, acompanhe a memória no Gerenciador de Tarefas (Windows) ou no Monitor de Atividade
+(macOS): ela deve ficar abaixo de 1 GB para o R.
+
 ### 4.2 `obter_base_tratada()` e `fechar_base()`
 
 **Uma função abre a base tratada e a outra fecha. Toda abertura precisa de um fechamento.**
@@ -624,7 +633,8 @@ Quando uma regra não estiver na tabela, decida com o Gabriel e acrescente a lin
 | `pipeline = FALSE` (padrão) | Usa `data/processed/cfs_tratada.duckdb` se estiver atual, inclusive uma cópia vinda de outro computador. Se faltar, ou se as regras ou o CSV mudaram, trata de novo e grava |
 | `pipeline = TRUE` | Trata o CSV num arquivo temporário e não grava nada em `data/processed/` |
 
-`fechar_base(base)` fecha a conexão com o banco e, no modo `TRUE`, apaga o arquivo temporário.
+`fechar_base(base)` fecha a conexão com o banco e, no modo `TRUE`, apaga o arquivo temporário. Ela
+também apaga a pasta de excedente da sessão em `data/interim/`.
 
 ### 4.3 As colunas novas da base tratada
 

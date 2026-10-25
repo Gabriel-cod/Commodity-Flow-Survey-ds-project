@@ -55,12 +55,23 @@ PERCENTIS_RAZAO <- c(0.001, 0.999)
 LIBRA_EM_T      <- 0.00045359237
 MILHA_EM_KM     <- 1.609344
 
-# Montagem em blocos com limite fixo, para caber numa maquina de 6 GiB. Medido
-# num cgroup de 6 GiB: pico de 2,0 GiB e ~140 s. Em uma passada sem limite eram
-# 15,2 GB; mais threads nao aceleram os blocos e so gastam memoria.
-LIMITE_MEMORIA <- "1GiB"
-THREADS_DUCKDB <- 2
-LINHAS_BLOCO   <- 4000000
+# Montagem em blocos com limite fixo, para caber numa maquina fraca de 4 GB
+# (sistema e IDE ja ocupam ~2,5 GB). Em uma passada sem limite eram 15,2 GB;
+# mais threads nao aceleram os blocos e so gastam memoria.
+LIMITE_MEMORIA <- "512MiB"
+THREADS_DUCKDB <- 1
+LINHAS_BLOCO   <- 1000000
+
+# Limite da conexao devolvida: sem ele o DuckDB usa ate 80% da RAM nas
+# consultas pesadas das secoes; acima disso transborda para o disco. Com 1 GiB
+# o render da Secao 1 (R + Quarto) passava de 1,5 GiB.
+LIMITE_CONSULTA  <- "512MiB"
+THREADS_CONSULTA <- 2
+
+# Prefixos da base temporaria do pipeline = TRUE e da pasta de excedente das
+# consultas; o PID permite achar sobras de sessoes que cairam no meio.
+PREFIXO_TEMPORARIA <- "cfs_tratada_tmp_"
+PREFIXO_EXCEDENTE  <- "excedente_"
 
 FLAGS <- c(
   "fl_sctg_colapsado", "fl_origem_ma_suprimida", "fl_origem_suprimida", "fl_exportacao",
@@ -83,12 +94,15 @@ hash_regras <- function(arquivo_regras = ARQUIVO_REGRAS) {
 obter_base_tratada <- function(pipeline = FALSE,
                                origem = caminho("raw"),
                                destino = caminho("base_tratada"),
-                               arquivo_regras = ARQUIVO_REGRAS) {
+                               arquivo_regras = ARQUIVO_REGRAS,
+                               pasta_temporaria = caminho("interim")) {
   if (!is.logical(pipeline) || length(pipeline) != 1 || is.na(pipeline)) {
     stop("pipeline deve ser TRUE ou FALSE", call. = FALSE)
   }
-  if (pipeline) .obter_temporaria(origem, arquivo_regras)
-  else .obter_gravada(origem, destino, arquivo_regras)
+  dir.create(pasta_temporaria, recursive = TRUE, showWarnings = FALSE)
+  .limpar_sobras(pasta_temporaria)
+  if (pipeline) .obter_temporaria(origem, arquivo_regras, pasta_temporaria)
+  else .obter_gravada(origem, destino, arquivo_regras, pasta_temporaria)
 }
 
 fechar_base <- function(base) {
@@ -98,32 +112,39 @@ fechar_base <- function(base) {
 
   desconectar_bd(con)
   if (!is.null(id)) rm(list = id, envir = .registro())
-  if (identical(entrada$tipo, "temporario")) {
-    unlink(c(entrada$arquivo, paste0(entrada$arquivo, ".wal")))
+  if (identical(entrada$tipo, "temporario")) .apagar_banco(entrada$arquivo)
+  # a pasta de excedente e da sessao: so sai quando a ultima conexao fecha
+  restantes <- unlist(eapply(.registro(), function(e) e$excedente))
+  if (!is.null(entrada$excedente) && !entrada$excedente %in% restantes) {
+    unlink(entrada$excedente, recursive = TRUE)
   }
   invisible(NULL)
 }
 
 # Internas ----------------------------------------------------------------
 
-.obter_temporaria <- function(origem, arquivo_regras) {
+# A base temporaria fica no disco do projeto, nunca no tempdir(): no Linux com
+# /tmp em tmpfs, base, preparo e excedente iriam todos para a RAM.
+.obter_temporaria <- function(origem, arquivo_regras, pasta_temporaria) {
   .exigir_origem(origem)
   regras <- .carregar_regras(arquivo_regras)
 
-  arquivo <- tempfile("cfs_tratada_", fileext = ".duckdb")
+  arquivo <- file.path(pasta_temporaria, paste0(
+    PREFIXO_TEMPORARIA, Sys.getpid(), "_", basename(tempfile("")), ".duckdb"))
   con <- .abrir(arquivo)
   .registrar(con, arquivo, "temporario")
   n <- tryCatch(regras$.construir(con, origem), error = function(e) {
     fechar_base(con)
     stop(e)
   })
+  .configurar_consulta(con, pasta_temporaria)
 
   message("Base tratada | origem: processamento (temporário) | hash: ", regras$hash,
           " | linhas: ", n)
   dplyr::tbl(con, "cfs_tratada")
 }
 
-.obter_gravada <- function(origem, destino, arquivo_regras) {
+.obter_gravada <- function(origem, destino, arquivo_regras, pasta_temporaria) {
   hash <- hash_regras(arquivo_regras)
 
   if (file.exists(destino)) {
@@ -131,6 +152,7 @@ fechar_base <- function(base) {
     .registrar(con, destino, "gravada")
     meta <- .ler_metadados(con)
     if (.base_atual(con, meta, hash, origem)) {
+      .configurar_consulta(con, pasta_temporaria)
       message("Base tratada | origem: gravada (atual) | hash: ", hash,
               " | processada em: ", format(meta$processado_em), " | linhas: ", meta$n_linhas)
       return(dplyr::tbl(con, "cfs_tratada"))
@@ -151,6 +173,7 @@ fechar_base <- function(base) {
     stop("A base reaberta tem hash diferente do atual; feche as bases abertas com ",
          "fechar_base() ou reinicie o R", call. = FALSE)
   }
+  .configurar_consulta(con, pasta_temporaria)
   message("Base tratada | origem: gravada (reprocessada) | hash: ", regras$hash,
           " | linhas: ", meta$n_linhas)
   dplyr::tbl(con, "cfs_tratada")
@@ -196,6 +219,10 @@ fechar_base <- function(base) {
   dir.create(dirname(destino), recursive = TRUE, showWarnings = FALSE)
   tmp <- paste0(destino, ".tmp-", Sys.getpid())
   unlink(c(tmp, paste0(tmp, ".wal")))
+  # montagem anterior interrompida: o preparo dela tem o tamanho do CSV
+  sobras <- list.files(dirname(destino), pattern = "\\.tmp-[0-9]+$", full.names = TRUE)
+  sobras <- sobras[startsWith(basename(sobras), paste0(basename(destino), ".tmp-"))]
+  for (sobra in sobras[.pid_morto(sobras, "^.*\\.tmp-([0-9]+)$")]) .apagar_banco(sobra)
   con <- .abrir(tmp)
   concluido <- FALSE
   on.exit(if (!concluido) {
@@ -255,8 +282,9 @@ fechar_base <- function(base) {
   leitura <- sprintf("read_csv(%s, header = true, columns = {%s})",
                      DBI::dbQuoteString(con, normalizePath(origem)), colunas)
 
-  # Limite so durante a montagem: a conexao devolvida consulta sem ele.
-  message("Montando a base em blocos (limite de ", LIMITE_MEMORIA, ", ~2 a 3 min)")
+  # Limite proprio da montagem; quem chama aplica depois o limite de consulta.
+  message("Montando a base em blocos (limite de ", LIMITE_MEMORIA,
+          "; pode levar alguns minutos em máquina lenta)")
   DBI::dbExecute(con, sprintf("SET memory_limit = '%s'", LIMITE_MEMORIA))
   DBI::dbExecute(con, sprintf("SET threads = %d", THREADS_DUCKDB))
   DBI::dbExecute(con, "SET preserve_insertion_order = false")
@@ -277,14 +305,18 @@ fechar_base <- function(base) {
   DBI::dbExecute(con, sprintf("
     CREATE TABLE preparo.bruto AS
     SELECT *, SHIPMT_VALUE::DOUBLE / NULLIF(SHIPMT_WGHT, 0) AS razao FROM %s", leitura))
-  # percentis da razao valor/peso dentro de cada SCTG, sem ponderacao
-  DBI::dbExecute(con, sprintf("
-    CREATE TEMP TABLE limites AS
-    SELECT SCTG,
-           quantile_cont(razao, %s) AS razao_min,
-           quantile_cont(razao, %s) AS razao_max
-    FROM preparo.bruto GROUP BY SCTG",
-    .num(PERCENTIS_RAZAO[1]), .num(PERCENTIS_RAZAO[2])))
+  # Percentis da razao valor/peso dentro de cada SCTG, sem ponderacao. Um SCTG
+  # por vez: o quantil guarda a coluna inteira na memoria, fora do memory_limit.
+  DBI::dbExecute(con, "CREATE TEMP TABLE limites (SCTG VARCHAR, razao_min DOUBLE, razao_max DOUBLE)")
+  sctgs <- DBI::dbGetQuery(con, "SELECT DISTINCT SCTG FROM preparo.bruto")$SCTG
+  message("Calculando os percentis de ", length(sctgs), " mercadorias")
+  for (sctg in sctgs) {
+    DBI::dbExecute(con, sprintf("
+      INSERT INTO limites
+      SELECT SCTG, quantile_cont(razao, %s), quantile_cont(razao, %s)
+      FROM preparo.bruto WHERE SCTG = ? GROUP BY SCTG",
+      .num(PERCENTIS_RAZAO[1]), .num(PERCENTIS_RAZAO[2])), params = list(sctg))
+  }
 
   selecao <- sprintf("
     SELECT %s,
@@ -305,10 +337,14 @@ fechar_base <- function(base) {
 
   DBI::dbExecute(con, paste("CREATE TABLE cfs_tratada AS", selecao, "LIMIT 0"))
   n_csv <- DBI::dbGetQuery(con, "SELECT count(*) AS n FROM preparo.bruto")$n
-  for (inicio in (seq_len(ceiling(n_csv / linhas_bloco)) - 1) * linhas_bloco) {
+  n_blocos <- ceiling(n_csv / linhas_bloco)
+  for (i in seq_len(n_blocos)) {
+    inicio <- (i - 1) * linhas_bloco
     DBI::dbExecute(con, sprintf(
       "INSERT INTO cfs_tratada %s WHERE preparo.bruto.rowid >= %s AND preparo.bruto.rowid < %s",
       selecao, .num(inicio), .num(inicio + linhas_bloco)))
+    # processador lento: mostra que o processo anda
+    message("  bloco ", i, " de ", n_blocos)
   }
   DBI::dbExecute(con, "DROP TABLE limites")
 
@@ -364,6 +400,46 @@ fechar_base <- function(base) {
 
 .abrir <- function(arquivo, read_only = FALSE) {
   DBI::dbConnect(duckdb::duckdb(), dbdir = arquivo, read_only = read_only)
+}
+
+# O excedente vai para uma pasta da sessao no disco do projeto: duas sessoes
+# lendo a mesma base gravada nao podem dividir a pasta, porque o DuckDB da
+# nomes fixos aos arquivos de excedente.
+.configurar_consulta <- function(con, pasta) {
+  excedente <- file.path(.abs(pasta), paste0(PREFIXO_EXCEDENTE, Sys.getpid()))
+  DBI::dbExecute(con, sprintf("SET memory_limit = '%s'", LIMITE_CONSULTA))
+  DBI::dbExecute(con, sprintf("SET threads = %d", THREADS_CONSULTA))
+  DBI::dbExecute(con, sprintf("SET temp_directory = %s", DBI::dbQuoteString(con, excedente)))
+  id <- .achar_registro(con)
+  entrada <- get(id, envir = .registro())
+  entrada$excedente <- excedente
+  assign(id, entrada, envir = .registro())
+  invisible(con)
+}
+
+# Banco, log, preparo e pasta de excedente de uma base temporaria.
+.apagar_banco <- function(arquivo) {
+  unlink(paste0(arquivo, c("", ".wal", ".stg", ".stg.wal", ".tmp", ".stg.tmp")), recursive = TRUE)
+}
+
+# Apaga bases temporarias e pastas de excedente de sessoes do R que ja nao
+# existem (caiu no meio).
+.limpar_sobras <- function(pasta) {
+  bases <- list.files(pasta, pattern = paste0("^", PREFIXO_TEMPORARIA, "[0-9]+_.*\\.duckdb$"),
+                      full.names = TRUE)
+  for (arquivo in bases[.pid_morto(bases, paste0("^", PREFIXO_TEMPORARIA, "([0-9]+)_.*$"))]) {
+    message("Apagando base temporária de uma sessão encerrada: ", basename(arquivo))
+    .apagar_banco(arquivo)
+  }
+  excedentes <- list.files(pasta, pattern = paste0("^", PREFIXO_EXCEDENTE, "[0-9]+$"),
+                           full.names = TRUE)
+  unlink(excedentes[.pid_morto(excedentes, paste0("^", PREFIXO_EXCEDENTE, "([0-9]+)$"))],
+         recursive = TRUE)
+}
+
+# TRUE para cada arquivo cujo PID (primeiro grupo da regex no nome) ja morreu.
+.pid_morto <- function(arquivos, regex) {
+  !as.integer(sub(regex, "\\1", basename(arquivos))) %in% ps::ps_pids()
 }
 
 # Caminho absoluto mesmo para arquivo que ainda nao existe (normalizePath so

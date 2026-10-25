@@ -203,9 +203,13 @@ todos com menos de 1.000), o mínimo e o máximo do grupo sempre ficam marcados.
 
 ```{r}
 #| label: duplicadas
-dup <- q(sprintf("SELECT count(*) - count(DISTINCT SHIPMT_ID) AS ids,
-                         count(*) - count(DISTINCT (%s)) AS linhas FROM cfs_tratada",
-                 paste(setdiff(names(TIPOS_CFS), "SHIPMT_ID"), collapse = ", ")))
+# GROUP BY transborda para o disco; count(DISTINCT) guarda tudo na memoria
+distintos <- function(colunas) {
+  q(sprintf("SELECT count(*) AS n FROM (SELECT %s FROM cfs_tratada GROUP BY ALL)",
+            paste(colunas, collapse = ", ")))$n
+}
+dup <- list(ids = n_total - distintos("SHIPMT_ID"),
+            linhas = n_total - distintos(setdiff(names(TIPOS_CFS), "SHIPMT_ID")))
 ```
 
 `SHIPMT_ID` é único (`r n_fmt(dup$ids)` repetições). Mas `r n_fmt(dup$linhas)` linhas
@@ -312,13 +316,25 @@ remessas <- q("SELECT sum(WGT_FACTOR) AS n FROM cfs_tratada")$n
 md <- q("SELECT count(*) AS n, sum(SHIPMT_VALUE * WGT_FACTOR) AS valor FROM cfs_tratada
          WHERE ORIG_STATE = '24'")
 md_guia <- c(n = 612317, valor = 198598788295)
+# Medianas pelas contagens de cada peso distinto: median() guarda a coluna
+# inteira na memoria, fora do memory_limit. Sem fator, a media das duas
+# posicoes centrais (n // 2 + 1 e (n + 1) // 2) e a mediana exata.
 medianas <- q("
-  WITH g AS (SELECT SHIPMT_WGHT, sum(WGT_FACTOR) AS f FROM cfs_tratada GROUP BY 1),
-       o AS (SELECT SHIPMT_WGHT, sum(f) OVER (ORDER BY SHIPMT_WGHT) AS acum, sum(f) OVER () AS total FROM g)
-  SELECT (SELECT median(SHIPMT_WGHT) FROM cfs_tratada) AS sem_peso,
-         (SELECT min(SHIPMT_WGHT) FROM o WHERE acum >= total / 2) AS ponderada")
-encomenda <- q("SELECT MODE = '21' AS encomenda, count(*) AS linhas, sum(WGT_FACTOR) AS remessas,
-                       median(SHIPMT_WGHT) AS mediana FROM cfs_tratada GROUP BY 1")
+  WITH g AS (SELECT SHIPMT_WGHT AS v, count(*) AS c, sum(WGT_FACTOR) AS f FROM cfs_tratada GROUP BY 1),
+       o AS (SELECT v, sum(c) OVER w AS acum_c, sum(f) OVER w AS acum_f,
+                    sum(c) OVER () AS n, sum(f) OVER () AS total FROM g WINDOW w AS (ORDER BY v))
+  SELECT (min(v) FILTER (WHERE acum_c >= (n + 1) // 2) + min(v) FILTER (WHERE acum_c >= n // 2 + 1)) / 2
+           AS sem_peso,
+         min(v) FILTER (WHERE acum_f >= total / 2) AS ponderada FROM o")
+encomenda <- q("
+  WITH g AS (SELECT MODE = '21' AS encomenda, SHIPMT_WGHT AS v, count(*) AS c, sum(WGT_FACTOR) AS f
+             FROM cfs_tratada GROUP BY ALL),
+       o AS (SELECT *, sum(c) OVER (PARTITION BY encomenda ORDER BY v) AS acum,
+                    sum(c) OVER (PARTITION BY encomenda) AS n FROM g)
+  SELECT encomenda, sum(c) AS linhas, sum(f) AS remessas,
+         (min(v) FILTER (WHERE acum >= (n + 1) // 2) + min(v) FILTER (WHERE acum >= n // 2 + 1)) / 2
+           AS mediana
+  FROM o GROUP BY 1")
 enc <- encomenda[encomenda$encomenda, ]
 ```
 
