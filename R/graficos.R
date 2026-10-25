@@ -25,6 +25,10 @@ tema_cfs <- function(base_size = 11) {
       plot.background = ggplot2::element_rect(fill = "#fcfcfb", colour = NA),
       text = ggplot2::element_text(colour = "#0b0b0b"),
       plot.title = ggplot2::element_text(face = "bold"),
+      plot.title.position = "plot",
+      plot.caption.position = "plot",
+      # margem direita maior: o ultimo rotulo do eixo x nao corta
+      plot.margin = ggplot2::margin(8, 24, 8, 8),
       plot.subtitle = ggplot2::element_text(colour = "#52514e"),
       plot.caption = ggplot2::element_text(colour = "#898781", hjust = 0),
       axis.text = ggplot2::element_text(colour = "#52514e"),
@@ -37,3 +41,10 @@ tema_cfs <- function(base_size = 11) {
 }
 
 rotulo_num <- function(...) scales::label_number(big.mark = ".", decimal.mark = ",", ...)
+
+# labs() com quebra de linha: titulo e subtitulo longos nao cortam no PDF.
+rotulos_cfs <- function(titulo, subtitulo = NULL, rodape = NULL, ..., largura = 80) {
+  quebrar <- function(x, n) if (is.null(x)) NULL else stringr::str_wrap(x, n)
+  ggplot2::labs(title = quebrar(titulo, largura), subtitle = quebrar(subtitulo, round(largura * 1.15)),
+                caption = quebrar(rodape, round(largura * 1.35)), ...)
+}

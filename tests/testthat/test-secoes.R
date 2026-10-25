@@ -62,3 +62,30 @@ test_that("secao 3: numericas, frequencias, raras e areas (T-S3)", {
   expect_equal(orig$categorias, dplyr::n_distinct(df_secoes$ORIG_CFS_AREA))
   expect_equal(orig$suprimidas_linhas, sum(endsWith(df_secoes$ORIG_CFS_AREA, "-00000")))
 })
+
+test_that("secao 4: distribuicoes e graficos (T-S4)", {
+  source(here::here("scripts", "05_secao4_distribuicoes.R"), local = TRUE)
+  r <- res_secoes(4)
+  s4 <- r$secao4
+  df_secoes <- r$df
+  esperar_populacao(s4)
+
+  expect_equal(sum(s4$peso$linhas), 20)
+  expect_equal(sum(s4$valor$remessas), sum(df_secoes$WGT_FACTOR))
+  expect_equal(s4$distancia$sem_fator[s4$distancia$p == 0.5], median(df_secoes$dist_km))
+  expect_equal(tail(s4$distancia_faixas$pct_linhas_acum, 1), 100)
+  expect_equal(s4$distancia_faixas$linhas[s4$distancia_faixas$faixa == "Até 100 km"],
+               sum(df_secoes$dist_km <= 100))
+  expect_equal(sum(s4$modal$pct_remessas), 100)
+  expect_equal(sum(s4$mercadoria$linhas[s4$mercadoria$SCTG == GRUPO_COLAPSADO]),
+               sum(df_secoes$SCTG == "00" | grepl("-", df_secoes$SCTG)))
+  expect_equal(unique(s4$origem$populacao), "origem_area")
+  expect_equal(unique(s4$destino$populacao), "geografica")
+  expect_lte(nrow(s4$origem), N_AREAS)
+
+  g <- graficos_secao4(s4)
+  expect_length(g, 8)
+  expect_true(all(vapply(g, ggplot2::is_ggplot, logical(1))))
+  # monta cada grafico de verdade, sem abrir dispositivo
+  for (nome in names(g)) expect_no_error(ggplot2::ggplot_build(g[[nome]]), message = nome)
+})

@@ -267,7 +267,7 @@ hipóteses.
 | 1 | Preparação e qualidade dos dados | **Pronta**: `reports/secao1_qualidade.qmd` |
 | 2 | Dimensão da base após a preparação | **Calculada**: `scripts/03_secao2_dimensao.R` |
 | 3 | Análise descritiva de 8 a 10 variáveis, incluindo as 5 do Check-in 1 | **Calculada**: `scripts/04_secao3_descritiva.R` |
-| 4 | Visualização das distribuições | A fazer |
+| 4 | Visualização das distribuições | **Calculada**: `scripts/05_secao4_distribuicoes.R` |
 | 5 | Relações entre variáveis (pelo menos quatro) | A fazer |
 | 6 | Três descobertas interessantes | A fazer |
 | 7 | Problemas identificados (atualiza a lista do Check-in 1) | A fazer |
@@ -662,6 +662,42 @@ média passa de 6.800 libras. Por isso a seção mostra mediana e quartis, e nã
   dentro de somas.
 - **Como continuar:** os resultados ficam em `obter_resultados(base, 3)$secao3`, com as tabelas
   `numericas`, `frequencias`, `maiores`, `raras` e `areas`.
+
+#### Seção 4 — Distribuições em gráficos ✓
+
+**Oito gráficos mostram como as variáveis se espalham. O principal recado: um terço das remessas
+viaja menos de 100 km, mas outro terço passa de 1.000 km, e caminhão e encomenda somam mais de 90%
+das linhas.**
+
+- **O que foi feito:** o script `scripts/05_secao4_distribuicoes.R` calcula as tabelas no banco e
+  desenha oito gráficos estáticos (ggplot), cada um respondendo a uma pergunta:
+  - **peso e valor:** histogramas em escala log, porque vão de 1 a milhões;
+  - **distância:** curva acumulada, com marcas em 100, 500 e 1.000 km;
+  - **modal:** barras pelas 9 famílias de transporte;
+  - **mercadoria:** as 15 com mais linhas, mais o grupo escondido ou agregado em faixa;
+  - **setor:** barras por setor de quem envia;
+  - **origem e destino:** as 20 áreas CFS com mais linhas.
+- **Decisões e por quê:**
+  - todo gráfico traz as duas versões lado a lado: **sem o fator** (a amostra) e **com o fator**
+    (as remessas estimadas dos EUA);
+  - o título de cada gráfico diz o que ele mostra, e o rodapé diz a população usada;
+  - o gráfico de origem usa só as linhas com a área de origem identificada, e o de destino usa a
+    população geográfica (sem exportações e sem origem escondida);
+  - nada é sorteado: as faixas e os quantis vêm da base inteira, calculados no banco.
+- **Alguns números:**
+
+  | Distância em linha reta | % das linhas | % das remessas estimadas |
+  |---|---|---|
+  | Até 100 km | 33,4% | 26,6% |
+  | De 100 a 500 km | 22,3% | 26,9% |
+  | De 500 a 1.000 km | 14,2% | 15,6% |
+  | Mais de 1.000 km | 30,1% | 30,9% |
+
+  Caminhão tem 47,9% das linhas e 37,6% das remessas estimadas; encomenda tem 44,2% e 58,8%.
+  Atacado envia 44,9% das linhas, mas é o varejo que soma mais remessas estimadas (50,9%).
+- **O que mudou:** os gráficos ganharam um tema próprio (`R/graficos.R`), com cores testadas para
+  daltonismo e títulos que quebram linha para não cortar no PDF.
+- **Como continuar:** `graficos_secao4(obter_resultados(base, 4)$secao4)` devolve os oito gráficos.
 
 ---
 
