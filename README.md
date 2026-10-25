@@ -265,8 +265,8 @@ hipóteses.
 | Seção | Tema | Situação |
 |---|---|---|
 | 1 | Preparação e qualidade dos dados | **Pronta**: `reports/secao1_qualidade.qmd` |
-| 2 | Dimensão da base após a preparação | A fazer |
-| 3 | Análise descritiva de 8 a 10 variáveis, incluindo as 5 do Check-in 1 | A fazer |
+| 2 | Dimensão da base após a preparação | **Calculada**: `scripts/03_secao2_dimensao.R` |
+| 3 | Análise descritiva de 8 a 10 variáveis, incluindo as 5 do Check-in 1 | **Calculada**: `scripts/04_secao3_descritiva.R` |
 | 4 | Visualização das distribuições | A fazer |
 | 5 | Relações entre variáveis (pelo menos quatro) | A fazer |
 | 6 | Três descobertas interessantes | A fazer |
@@ -601,6 +601,67 @@ Quando uma regra não estiver na tabela, decida com o Gabriel e acrescente a lin
   2. o que foi feito;
   3. as decisões e por quê;
   4. como continuar.
+
+#### Seção 2 — Dimensão da base ✓
+
+**A base tratada tem as mesmas 37.576.546 linhas do arquivo original e 29 colunas. Cada análise
+usa uma de quatro "populações", e a tabela da seção diz quantas linhas e remessas cada uma tem.**
+
+- **O que foi feito:** o script `scripts/03_secao2_dimensao.R` conta as linhas do arquivo e da base,
+  separa as colunas em 18 originais, 2 novas (peso em toneladas e distância em km) e 9 marcações, e
+  mede cada população.
+- **As quatro populações:**
+
+  | População | Quais linhas | Linhas | % das linhas |
+  |---|---|---|---|
+  | Completa | todas | 37.576.546 | 100% |
+  | Geográfica | sem exportações e sem origem suprimida | 36.742.268 | 97,8% |
+  | Mercadoria | sem SCTG colapsado | 37.477.912 | 99,7% |
+  | Origem por área | com a área CFS de origem identificada | 37.572.550 | 99,99% |
+
+- **Decisões e por quê:**
+  - nenhuma linha é apagada: cada análise escolhe a população que faz sentido para a pergunta, e a
+    tabela diz qual usou, como o professor pede;
+  - na população "origem por área" saem as linhas com a metrópole de origem escondida pelo Census
+    (decisão do Gabriel) e também as com o estado escondido, porque nelas a área também não aparece.
+- **O que mudou:** as regras das populações ficaram num lugar só (`R/populacoes.R`). Antes, cada
+  análise escreveria o próprio filtro.
+- **Como continuar:** para usar uma população, `filtrar_populacao(base, "geografica")`.
+
+#### Seção 3 — Descritiva das 8 variáveis ✓
+
+**Peso, valor e distância são muito assimétricos: a remessa típica pesa 20 libras (9 kg), mas a
+média passa de 6.800 libras. Por isso a seção mostra mediana e quartis, e não só a média.**
+
+- **O que foi feito:** o script `scripts/04_secao3_descritiva.R` descreve as 5 variáveis do Check-in 1
+  (origem, destino, mercadoria, modal e peso) e mais 3 (valor, distância e setor):
+  - **numéricas:** quantidade, ausentes, média, desvio padrão, mínimo, quartis e máximo, na unidade
+    original (libras, milhas) e na métrica (toneladas, km);
+  - **categóricas:** as 10 categorias mais frequentes, com o nome de cada código, e o resto somado
+    numa linha "Demais";
+  - **categorias raras ou problemáticas:** SCTG escondido ou agregado em faixa, SCTG com menos de
+    1.000 linhas e modal desconhecido;
+  - **áreas CFS:** quantas existem, quanto as 10 maiores concentram e quanto é "restante do estado".
+- **Decisões e por quê:**
+  - cada medida aparece duas vezes, **sem o fator** (descreve a amostra) e **com o fator** (estima
+    as remessas dos EUA). As duas contam histórias diferentes: com o fator, a remessa típica pesa
+    só 3 libras, porque as encomendas pequenas são muitíssimas;
+  - a descritiva usa a base completa, para mostrar também os códigos escondidos e agregados;
+  - os quartis são calculados sem guardar a coluna inteira na memória, para caber em computador de
+    4 GB.
+- **Alguns números (base completa):**
+
+  | | Mediana sem fator | Mediana com fator |
+  |---|---|---|
+  | Peso | 20 lb | 3 lb |
+  | Valor | US$ 159 | US$ 37 |
+  | Distância | 218 mi | 262 mi |
+
+  Encomendas (`MODE` 21) são 44% das linhas e 59% das remessas estimadas.
+- **O que mudou:** as medidas com fator usam as fórmulas aprovadas pelo Gabriel em 24/10/2026, todas
+  dentro de somas.
+- **Como continuar:** os resultados ficam em `obter_resultados(base, 3)$secao3`, com as tabelas
+  `numericas`, `frequencias`, `maiores`, `raras` e `areas`.
 
 ---
 

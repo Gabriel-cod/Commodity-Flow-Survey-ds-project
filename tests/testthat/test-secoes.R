@@ -1,0 +1,64 @@
+source(here::here("scripts", "02_trata_base.R"))
+source(here::here("scripts", "10_resultados.R"))
+
+# Calcula as secoes pedidas na fixture e devolve tambem a fixture no R.
+res_secoes <- function(secoes) {
+  base <- suppressMessages(obter_base_tratada(pipeline = TRUE, origem = test_path("fixtures", "cfs_mini.csv")))
+  on.exit(fechar_base(base))
+  res <- suppressMessages(obter_resultados(base, secoes, pasta = withr::local_tempdir(), forcar = TRUE))
+  c(res, list(df = dplyr::collect(base)))
+}
+
+esperar_populacao <- function(secao) {
+  for (nome in names(secao)) {
+    tab <- secao[[nome]]
+    if (!is.data.frame(tab)) next
+    expect_true("populacao" %in% names(tab), info = nome)
+    expect_true(all(tab$populacao %in% POPULACOES$id), info = nome)
+  }
+}
+
+test_that("secao 2: dimensao, colunas e populacoes (T-S2)", {
+  r <- res_secoes(2)
+  s2 <- r$secao2
+  df_secoes <- r$df
+  esperar_populacao(s2)
+  valor <- setNames(s2$dimensao$valor, s2$dimensao$medida)
+  expect_equal(valor[["Linhas na base tratada"]], 20)
+  expect_equal(valor[["Linhas removidas"]], 0)
+  expect_equal(valor[["Colunas na base tratada"]], 29)
+  expect_equal(unname(valor[c("Colunas originais", "Colunas derivadas", "Flags de qualidade")]), c(18, 2, 9))
+  expect_identical(s2$colunas$coluna, COLUNAS_TRATADAS)
+  expect_equal(s2$populacoes$linhas, c(20, 18, 18, 18))
+  expect_equal(s2$populacoes$remessas[1], sum(df_secoes$WGT_FACTOR))
+  expect_equal(s2$populacoes$pct_linhas[1], 100)
+})
+
+test_that("secao 3: numericas, frequencias, raras e areas (T-S3)", {
+  r <- res_secoes(3)
+  s3 <- r$secao3
+  df_secoes <- r$df
+  esperar_populacao(s3)
+
+  med <- dplyr::filter(s3$numericas, coluna == "dist_km", medida == "mediana")
+  expect_equal(med$sem_fator, median(df_secoes$dist_km))
+  expect_setequal(unique(s3$numericas$unidade), c("lb", "t", "US$", "mi", "km"))
+
+  modal <- dplyr::filter(s3$frequencias, variavel == "MODE")
+  expect_equal(sum(modal$linhas), 20)
+  expect_equal(modal$rotulo[modal$codigo == "21"], "Parcel, U.S.P.S. or courier")
+
+  # 10 maiores + demais somam a variavel inteira
+  maiores <- dplyr::filter(s3$maiores, variavel == "SCTG")
+  expect_lte(nrow(maiores), 11)
+  expect_equal(sum(maiores$pct_linhas), 100)
+  expect_true(any(startsWith(maiores$rotulo, "Demais")))
+
+  expect_equal(s3$raras$motivo[s3$raras$codigo == "00"], "Mercadoria suprimida")
+  expect_equal(s3$raras$motivo[s3$raras$codigo == "01-05"], "SCTG colapsado em faixa")
+  expect_equal(s3$raras$linhas[s3$raras$variavel == "MODE"], sum(df_secoes$MODE == "30"))
+
+  orig <- dplyr::filter(s3$areas, variavel == "ORIG_CFS_AREA")
+  expect_equal(orig$categorias, dplyr::n_distinct(df_secoes$ORIG_CFS_AREA))
+  expect_equal(orig$suprimidas_linhas, sum(endsWith(df_secoes$ORIG_CFS_AREA, "-00000")))
+})

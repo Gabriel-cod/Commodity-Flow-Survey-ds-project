@@ -2,11 +2,11 @@
 # sai da base: cada analise filtra a sua populacao na consulta.
 
 POPULACOES <- tibble::tribble(
-  ~id,           ~regra,                                              ~descricao,
-  "completa",    "todas as linhas",                                   "Base completa",
-  "geografica",  "!fl_exportacao & !fl_origem_suprimida",             "Sem exportações e sem origem suprimida",
-  "mercadoria",  "!fl_sctg_colapsado",                                "Sem SCTG colapsado",
-  "origem_area", "!fl_origem_suprimida & !fl_origem_ma_suprimida",    "Com área CFS de origem identificada"
+  ~id,           ~regra,                                           ~descricao,                               ~uso,
+  "completa",    "todas as linhas",                                "Base completa",                          "Dimensão, descritiva, modal e setor",
+  "geografica",  "!fl_exportacao & !fl_origem_suprimida",          "Sem exportações e sem origem suprimida", "Origem × destino",
+  "mercadoria",  "!fl_sctg_colapsado",                             "Sem SCTG colapsado",                     "Gráficos e relações por mercadoria",
+  "origem_area", "!fl_origem_suprimida & !fl_origem_ma_suprimida", "Com área CFS de origem identificada",    "Gráficos por área CFS de origem"
 )
 
 filtrar_populacao <- function(dados, populacao) {
