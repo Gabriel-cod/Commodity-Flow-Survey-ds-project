@@ -4,7 +4,7 @@
 dos Estados Unidos em 2022. Este repositório guarda o código que prepara os dados, os relatórios de
 cada check-in e o motivo de cada decisão tomada.**
 
-- **Equipe:** Gabriel Alves Silva (líder), Gustavo Barco Pereira Santos e Mirella.
+- **Equipe:** Gabriel Alves Silva (líder), Gustavo Barco Pereira Santos e Mirella Garcia.
 - **Professor:** Dr. G.
 - **Disciplina:** Introdução à Ciência de Dados, UFU, 2026/02.
 

@@ -10,6 +10,8 @@ default:
     dicionario: "data/external/dicionario.xlsx"
     # base temporaria do pipeline = TRUE e excedente do DuckDB (fora do Git)
     interim: "data/interim"
+    # cache dos resultados das Secoes 2 a 8 (fora do Git)
+    resultados: "data/processed/resultados"
   # Banco padrao: DuckDB local, funciona sem .Renviron e sem rede.
   banco:
     driver: "duckdb"
