@@ -268,7 +268,7 @@ hipóteses.
 | 2 | Dimensão da base após a preparação | **Calculada**: `scripts/03_secao2_dimensao.R` |
 | 3 | Análise descritiva de 8 a 10 variáveis, incluindo as 5 do Check-in 1 | **Calculada**: `scripts/04_secao3_descritiva.R` |
 | 4 | Visualização das distribuições | **Calculada**: `scripts/05_secao4_distribuicoes.R` |
-| 5 | Relações entre variáveis (pelo menos quatro) | A fazer |
+| 5 | Relações entre variáveis (pelo menos quatro) | **Calculada**: `scripts/06_secao5_relacoes.R` |
 | 6 | Três descobertas interessantes | A fazer |
 | 7 | Problemas identificados (atualiza a lista do Check-in 1) | A fazer |
 | 8 | O que aprendemos sobre a base | A fazer |
@@ -698,6 +698,39 @@ das linhas.**
 - **O que mudou:** os gráficos ganharam um tema próprio (`R/graficos.R`), com cores testadas para
   daltonismo e títulos que quebram linha para não cortar no PDF.
 - **Como continuar:** `graficos_secao4(obter_resultados(base, 4)$secao4)` devolve os oito gráficos.
+
+#### Seção 5 — Relações entre variáveis ✓
+
+**Cinco relações. A mais forte: 68% das toneladas estimadas não saem do estado onde a carga
+nasceu, e em 48 dos 51 estados a maior fonte de carga é o próprio estado.**
+
+- **O que foi feito:** o script `scripts/06_secao5_relacoes.R` cruza as variáveis duas a duas:
+  1. **peso × distância:** mapa de calor em escala log e correlação de Pearson dos logs;
+  2. **peso por família de modal:** caixas com quartis e percentis 10 e 90;
+  3. **distância por família de modal:** idem;
+  4. **modal × mercadoria:** quanto cada modal leva dentro de cada mercadoria, em linhas, remessas
+     estimadas e toneladas estimadas;
+  5. **origem × destino:** quanto das toneladas fica no próprio estado e, para cada destino, qual
+     estado manda mais carga.
+- **Decisões e por quê:**
+  - as caixas são desenhadas a partir dos quantis calculados no banco, sem trazer as remessas para
+    o R;
+  - em toneladas, "sem fator" é a soma do peso das linhas da amostra, e "com fator" são as
+    toneladas estimadas;
+  - a correlação sai só **sem fator**: a versão com o fator é um uso novo da ponderação e espera a
+    validação do Gabriel;
+  - origem × destino usa a população geográfica (sem exportações e sem origem escondida), e modal ×
+    mercadoria usa a população sem SCTG colapsado.
+- **Alguns números:**
+  - peso e distância têm correlação negativa fraca (Pearson dos logs = −0,32);
+  - a remessa mediana pesa 173.872 lb por ferrovia e 3 lb por avião ou encomenda;
+  - em toneladas, o caminhão lidera em todos os 16 grupos de mercadoria; em remessas estimadas, a
+    encomenda lidera em 11;
+  - só Distrito de Colúmbia, Connecticut e Delaware recebem mais toneladas de outro estado
+    (Maryland, Nova Jersey e Nova Jersey) do que de si mesmos.
+- **O que mudou:** os pedaços comuns aos gráficos (legenda sem/com fator e rodapé com a população)
+  foram para `R/graficos.R`, para as Seções 4 e 5 usarem o mesmo texto.
+- **Como continuar:** `graficos_secao5(obter_resultados(base, 5)$secao5)` devolve os cinco gráficos.
 
 ---
 

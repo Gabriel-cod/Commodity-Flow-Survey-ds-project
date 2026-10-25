@@ -89,3 +89,38 @@ test_that("secao 4: distribuicoes e graficos (T-S4)", {
   # monta cada grafico de verdade, sem abrir dispositivo
   for (nome in names(g)) expect_no_error(ggplot2::ggplot_build(g[[nome]]), message = nome)
 })
+
+test_that("secao 5: relacoes e graficos (T-S5)", {
+  source(here::here("scripts", "06_secao5_relacoes.R"), local = TRUE)
+  r <- res_secoes(5)
+  s5 <- r$secao5
+  df_secoes <- r$df
+  esperar_populacao(s5)
+
+  expect_equal(sum(s5$peso_distancia$linhas), 20)
+  expect_equal(sum(s5$peso_distancia$pct_remessas), 100)
+  expect_equal(s5$correlacao$pearson_sem_fator,
+               cor(log10(df_secoes$SHIPMT_WGHT), log10(df_secoes$dist_km)))
+
+  med <- dplyr::filter(s5$peso_modal, p == 0.5, familia_modal == "Caminhão")
+  caminhao <- df_secoes$MODE %in% FAMILIAS_MODAL[["Caminhão"]]
+  expect_equal(med$sem_fator, median(df_secoes$SHIPMT_WGHT[caminhao]))
+
+  # dentro de cada mercadoria as familias somam 100%, nas tres medidas
+  somas <- dplyr::summarise(dplyr::group_by(s5$modal_sctg, SCTG),
+                            dplyr::across(c(pct_linhas, pct_remessas, pct_toneladas), sum))
+  expect_true(all(abs(as.matrix(somas[, -1]) - 100) < 1e-9))
+  expect_false(any(s5$modal_sctg$SCTG %in% c("00", "01-05")))
+
+  geo <- df_secoes[!df_secoes$fl_exportacao & !df_secoes$fl_origem_suprimida, ]
+  mesmo <- geo$ORIG_STATE == geo$DEST_STATE
+  total <- dplyr::filter(s5$intraestadual, ORIG_STATE == "Total")
+  expect_equal(total$linhas_total, nrow(geo))
+  expect_equal(total$pct_toneladas, 100 * sum((geo$peso_t * geo$WGT_FACTOR)[mesmo]) /
+                 sum(geo$peso_t * geo$WGT_FACTOR))
+  expect_equal(nrow(s5$maior_origem), dplyr::n_distinct(geo$DEST_STATE))
+
+  g <- graficos_secao5(s5)
+  expect_length(g, 5)
+  for (nome in names(g)) expect_no_error(ggplot2::ggplot_build(g[[nome]]), message = nome)
+})

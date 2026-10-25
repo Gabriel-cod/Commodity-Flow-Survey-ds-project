@@ -72,31 +72,18 @@ graficos_secao4 <- function(res) {
   )
 }
 
-# Pares (sem fator, com fator) em formato longo, com a legenda de COR_SERIE.
-.series <- function(df) {
-  tidyr::pivot_longer(df, c(pct_linhas, pct_remessas), names_to = "serie", values_to = "pct") |>
-    dplyr::mutate(serie = factor(ifelse(serie == "pct_linhas", "Sem fator", "Com fator"), names(COR_SERIE)))
-}
-
-.legenda_series <- "Sem fator: % das linhas da amostra. Com fator: % das remessas estimadas (soma do WGT_FACTOR)."
-
-.rodape <- function(populacao) {
-  descricao <- POPULACOES$descricao[POPULACOES$id == populacao]
-  paste0("Fonte: CFS 2022 PUMS (Census/BTS). População: ", sub("^(.)", "\\L\\1", descricao, perl = TRUE), ".")
-}
-
 .grafico_histograma <- function(h, eixo_x, titulo) {
   dados <- h |>
     dplyr::filter(!is.na(inicio)) |>
     dplyr::mutate(pct_linhas = 100 * linhas / sum(linhas), pct_remessas = 100 * remessas / sum(remessas)) |>
-    .series()
+    series_fator()
   ggplot2::ggplot(dados) +
     ggplot2::geom_rect(ggplot2::aes(xmin = inicio, xmax = fim, ymin = 0, ymax = pct, fill = serie),
                        colour = "#fcfcfb", linewidth = 0.2) +
     ggplot2::facet_wrap(~serie, ncol = 1) +
     ggplot2::scale_x_log10(labels = rotulo_num()) +
     ggplot2::scale_fill_manual(values = COR_SERIE, guide = "none") +
-    rotulos_cfs(titulo, .legenda_series, paste(.rodape(h$populacao[1]), "Faixas de 0,1 em log10."),
+    rotulos_cfs(titulo, LEGENDA_SERIES, paste(rodape_cfs(h$populacao[1]), "Faixas de 0,1 em log10."),
                 x = eixo_x, y = "% em cada faixa") +
     tema_cfs()
 }
@@ -112,13 +99,13 @@ graficos_secao4 <- function(res) {
     ggplot2::scale_colour_manual(values = COR_SERIE, name = NULL) +
     rotulos_cfs(sprintf("Na mediana, a remessa viaja %s km em linha reta (%s km com o fator)",
                         n_fmt(q$sem_fator[q$p == 0.5]), n_fmt(q$com_fator[q$p == 0.5])),
-                paste(.legenda_series, "Linhas tracejadas em 100, 500 e 1.000 km."), .rodape(q$populacao[1]),
+                paste(LEGENDA_SERIES, "Linhas tracejadas em 100, 500 e 1.000 km."), rodape_cfs(q$populacao[1]),
                 x = "Distância em linha reta (km, escala log)", y = "% acumulado de remessas") +
     tema_cfs()
 }
 
 .grafico_barras <- function(df, categoria, titulo) {
-  dados <- .series(df)
+  dados <- series_fator(df)
   if (!is.factor(dados[[categoria]])) {
     dados[[categoria]] <- stats::reorder(dados[[categoria]], dados$pct * (dados$serie == "Sem fator"))
   } else {
@@ -128,12 +115,12 @@ graficos_secao4 <- function(res) {
     ggplot2::geom_col(position = ggplot2::position_dodge(width = 0.8, reverse = TRUE), width = 0.75) +
     ggplot2::scale_fill_manual(values = COR_SERIE, name = NULL) +
     ggplot2::scale_x_continuous(labels = rotulo_num(suffix = "%"), expand = ggplot2::expansion(c(0, 0.05))) +
-    rotulos_cfs(titulo, .legenda_series, .rodape(df$populacao[1]), x = "% do total", y = NULL) +
+    rotulos_cfs(titulo, LEGENDA_SERIES, rodape_cfs(df$populacao[1]), x = "% do total", y = NULL) +
     tema_cfs()
 }
 
 .grafico_pontos <- function(df, categoria, titulo) {
-  dados <- .series(df) |>
+  dados <- series_fator(df) |>
     dplyr::mutate(rotulo = stringr::str_trunc(.data[[categoria]], 50),
                   rotulo = stats::reorder(rotulo, pct * (serie == "Sem fator")))
   ggplot2::ggplot(dados, ggplot2::aes(pct, rotulo)) +
@@ -141,6 +128,6 @@ graficos_secao4 <- function(res) {
     ggplot2::geom_point(ggplot2::aes(colour = serie), size = 2.4) +
     ggplot2::scale_colour_manual(values = COR_SERIE, name = NULL) +
     ggplot2::scale_x_continuous(labels = rotulo_num(suffix = "%")) +
-    rotulos_cfs(titulo, .legenda_series, .rodape(df$populacao[1]), x = "% do total da população", y = NULL) +
+    rotulos_cfs(titulo, LEGENDA_SERIES, rodape_cfs(df$populacao[1]), x = "% do total da população", y = NULL) +
     tema_cfs()
 }

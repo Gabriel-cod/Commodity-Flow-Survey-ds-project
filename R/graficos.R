@@ -48,3 +48,16 @@ rotulos_cfs <- function(titulo, subtitulo = NULL, rodape = NULL, ..., largura = 
   ggplot2::labs(title = quebrar(titulo, largura), subtitle = quebrar(subtitulo, round(largura * 1.15)),
                 caption = quebrar(rodape, round(largura * 1.35)), ...)
 }
+
+# Pares (sem fator, com fator) em formato longo, com a legenda de COR_SERIE.
+series_fator <- function(df) {
+  tidyr::pivot_longer(df, c(pct_linhas, pct_remessas), names_to = "serie", values_to = "pct") |>
+    dplyr::mutate(serie = factor(ifelse(serie == "pct_linhas", "Sem fator", "Com fator"), names(COR_SERIE)))
+}
+
+LEGENDA_SERIES <- "Sem fator: % das linhas da amostra. Com fator: % das remessas estimadas (soma do WGT_FACTOR)."
+
+rodape_cfs <- function(populacao) {
+  descricao <- POPULACOES$descricao[POPULACOES$id == populacao]
+  paste0("Fonte: CFS 2022 PUMS (Census/BTS). População: ", sub("^(.)", "\\L\\1", descricao, perl = TRUE), ".")
+}
