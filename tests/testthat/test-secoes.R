@@ -124,3 +124,13 @@ test_that("secao 5: relacoes e graficos (T-S5)", {
   expect_length(g, 5)
   for (nome in names(g)) expect_no_error(ggplot2::ggplot_build(g[[nome]]), message = nome)
 })
+
+test_that("executar.R le as secoes sem avaliar codigo (T-S9)", {
+  expect_equal(ler_secoes("2:5", prontas = 2:5), 2:5)
+  expect_equal(ler_secoes("4, 2,3", prontas = 2:5), 2:4)
+  expect_equal(ler_secoes(NA_character_, prontas = 2:5), 2:5)
+  expect_equal(ler_secoes(character(), prontas = 2:5), 2:5)
+  expect_error(ler_secoes("system('ls')", prontas = 2:5), "invalidas")
+  expect_error(ler_secoes("2:6", prontas = 2:5), "sem script pronto: 6")
+  expect_true(all(2:5 %in% secoes_prontas()))
+})

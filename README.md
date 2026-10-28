@@ -754,6 +754,17 @@ instalador oficial do CRAN. Deixe folga no disco do projeto: a base gravada tem 
 montagem usa mais enquanto roda (o pico em disco ainda não foi medido). Na primeira vez, acompanhe a memória no Gerenciador de Tarefas (Windows) ou no Monitor de Atividade
 (macOS): ela deve ficar abaixo de 1 GB para o R.
 
+**Para rodar tudo de uma vez.** Depois de instalar, rode na pasta do projeto:
+
+```bash
+Rscript scripts/executar.R        # calcula todas as seções prontas
+Rscript scripts/executar.R 2:5    # só as Seções 2 a 5
+```
+
+Ou abra `scripts/executar.R` no RStudio e clique em **Source**. O script carrega as peças na ordem
+certa, guarda os resultados em `data/processed/resultados/` (na segunda vez, leva segundos) e fecha
+a base no fim, mesmo se der erro.
+
 ### 4.2 `obter_base_tratada()` e `fechar_base()`
 
 **Uma função abre a base tratada e a outra fecha. Toda abertura precisa de um fechamento.**

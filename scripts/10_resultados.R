@@ -4,6 +4,11 @@
 #   base <- obter_base_tratada()
 #   res <- obter_resultados(base)
 #   fechar_base(base)
+# Para rodar tudo de uma vez, use scripts/executar.R.
+
+# Carregado sozinho, traz o setup e o tratamento para nao falhar em caminho() ou hash_regras().
+if (!exists("caminho", mode = "function")) source(here::here("scripts", "00_setup.R"))
+if (!exists("hash_regras", mode = "function")) source(here::here("scripts", "02_trata_base.R"))
 
 SCRIPTS_SECOES <- c(
   secao2 = "03_secao2_dimensao.R",
@@ -36,6 +41,31 @@ obter_resultados <- function(base, secoes = 2:8, pasta = caminho("resultados"), 
     res[[secao]] <- .obter_secao(base, secao, scripts[[secao]], chaves[[secao]], res, pasta, forcar)
   }
   res[pedidas]
+}
+
+# Secoes cujo script ja define calcular_secaoN(); as outras ainda estao em construcao.
+secoes_prontas <- function(scripts = here::here("scripts", SCRIPTS_SECOES)) {
+  pronta <- vapply(seq_along(scripts), function(i) {
+    padrao <- paste0("^calcular_", names(SCRIPTS_SECOES)[i], " <- function")
+    file.exists(scripts[i]) && any(grepl(padrao, readLines(scripts[i], warn = FALSE)))
+  }, logical(1))
+  as.integer(sub("secao", "", names(SCRIPTS_SECOES)[pronta]))
+}
+
+# Le "2:5", "2,3,4" ou "5" sem avaliar codigo; vazio devolve as secoes prontas.
+ler_secoes <- function(texto, prontas = secoes_prontas()) {
+  if (!length(texto) || is.na(texto) || !nzchar(trimws(texto))) return(prontas)
+  partes <- strsplit(gsub("\\s", "", texto), ",")[[1]]
+  if (!all(grepl("^[0-9]+(:[0-9]+)?$", partes))) {
+    stop("Secoes invalidas: '", texto, "'. Use, por exemplo, 2:5 ou 2,3,4.", call. = FALSE)
+  }
+  secoes <- unlist(lapply(strsplit(partes, ":"), function(p) seq(as.integer(p[1]), as.integer(p[length(p)]))))
+  fora <- setdiff(secoes, prontas)
+  if (length(fora)) {
+    stop("Secoes sem script pronto: ", paste(fora, collapse = ", "),
+         ". Prontas: ", paste(prontas, collapse = ", "), ".", call. = FALSE)
+  }
+  sort(unique(secoes))
 }
 
 .obter_secao <- function(base, secao, script, chave, res, pasta, forcar) {
