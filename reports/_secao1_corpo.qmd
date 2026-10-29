@@ -1,0 +1,369 @@
+<!-- Corpo da Secao 1, incluido por secao1_qualidade.qmd e checkin2.qmd. Espera a
+base aberta em `base`, depois de 00_setup.R e 02_trata_base.R. -->
+
+```{r}
+#| label: secao1-dados
+con <- dbplyr::remote_con(base)
+q <- function(sql) DBI::dbGetQuery(con, sql)
+dic <- ler_dicionario()
+meta <- q("SELECT * FROM metadados")
+leitura_bruta <- sprintf("read_csv(%s, all_varchar = true)",
+                         DBI::dbQuoteString(con, normalizePath(caminho("raw"))))
+
+n_total <- meta$n_linhas
+flags <- unlist(q(paste("SELECT", paste(sprintf("sum(%s::INT) AS %s", FLAGS, FLAGS), collapse = ", "),
+                        "FROM cfs_tratada")))
+```
+
+## Resumo da base tratada
+
+A base vem da função `obter_base_tratada()` (`scripts/02_trata_base.R`), que lê o CSV original com
+tipos explícitos e devolve a base completa com marcações de qualidade e variáveis derivadas.
+**Nenhuma linha foi removida**: as exclusões são feitas em cada análise, e cada tabela abaixo diz a
+população que usa.
+
+| Medida | Valor |
+|---|---|
+| Linhas no CSV original e na base tratada | `r n_fmt(n_total)` |
+| Linhas removidas | 0 |
+| Colunas | `r length(colnames(base))` (18 originais + 2 derivadas + 9 flags) |
+| Processada em | `r format(meta$processado_em, "%d/%m/%Y %H:%M")` |
+| Hash das regras de tratamento | `r meta$hash_regras` |
+| Ambiente | R `r getRversion()`, duckdb `r packageVersion("duckdb")` |
+
+Salvo indicação, a população de cada tabela é a base completa (`r n_fmt(n_total)` linhas, uma por
+remessa amostrada) e as contagens são de **linhas do arquivo**, sem o fator de ponderação.
+
+## 1. Tipos das variáveis e erros de importação
+
+```{r}
+#| label: tipos
+inferidos <- q(sprintf("DESCRIBE SELECT * FROM read_csv_auto(%s)",
+                       DBI::dbQuoteString(con, normalizePath(caminho("raw")))))
+inferidos_num <- inferidos$column_name[inferidos$column_type %in% c("BIGINT", "INTEGER") &
+                                         TIPOS_CFS[inferidos$column_name] == "VARCHAR"]
+zeros <- q("SELECT sum((ORIG_STATE LIKE '0%')::INT) AS orig, sum((DEST_STATE LIKE '0%')::INT) AS dest,
+                   sum((SCTG LIKE '0%' AND length(SCTG) = 2)::INT) AS sctg,
+                   sum((ORIG_MA = '00000')::INT) AS ma
+            FROM cfs_tratada")
+fator_sem_decimal <- q(sprintf("SELECT count(*) AS n FROM %s WHERE NOT contains(WGT_FACTOR, '.')",
+                               leitura_bruta))$n
+fora_largura <- sum(unlist(q(paste("SELECT", paste(vapply(names(LARGURAS_CODIGO), function(col) {
+  sprintf("sum((length(%s) NOT IN (%s))::INT) AS %s", col,
+          paste(LARGURAS_CODIGO[[col]], collapse = ", "), col)
+}, character(1)), collapse = ", "), "FROM cfs_tratada"))))
+```
+
+**Problema.** As colunas de código (estado, metrópole, área, setor, mercadoria, modal) são rótulos,
+não números. Na inferência automática de tipos do DuckDB, `r paste0("\x60", inferidos_num, "\x60", collapse = ", ")`
+saem como inteiros, o que transformaria a metrópole suprimida `'00000'` em `0`
+(`r n_fmt(zeros$ma)` linhas). Lidos como número, como fazia o fluxo antigo com `fread`, também
+perderiam o zero à esquerda `r n_fmt(zeros$orig)` estados de origem, `r n_fmt(zeros$dest)` estados de
+destino e `r n_fmt(zeros$sctg)` códigos SCTG de 2 dígitos (contagens que incluem os códigos `'00'`).
+Além disso, `r n_fmt(fator_sem_decimal)` valores de `WGT_FACTOR` a partir de 1 milhão vêm gravados
+sem casa decimal.
+
+**Decisão.** O primeiro passo do tratamento define o tipo de cada coluna explicitamente, sem
+inferência: códigos como texto, valor, peso e distância como inteiros, `WGT_FACTOR` como decimal.
+A leitura é estrita: uma linha que não converte interrompe o processamento. Depois, a função confere
+a largura de cada código; hoje há **`r n_fmt(fora_largura)` códigos fora das larguras válidas**.
+
+```{r}
+#| label: tabela-tipos
+tabela(data.frame(
+  Coluna = names(TIPOS_CFS),
+  Tipo = unname(TIPOS_CFS),
+  `Larguras válidas` = vapply(names(TIPOS_CFS), function(col) {
+    if (is.null(LARGURAS_CODIGO[[col]])) "—" else paste(LARGURAS_CODIGO[[col]], collapse = " ou ")
+  }, character(1)),
+  check.names = FALSE, row.names = NULL
+))
+```
+
+A metrópole tem 3 dígitos nas áreas do tipo CSA e 5 nas do tipo MSA; por isso nunca é completada com
+zeros.
+
+## 2. Códigos de valores ausentes, ignorados ou não aplicáveis
+
+```{r}
+#| label: codigos
+codigos <- q("
+  SELECT 'SCTG = 00 (mercadoria suprimida)' AS codigo, count(*) FILTER (WHERE SCTG = '00') AS linhas FROM cfs_tratada
+  UNION ALL SELECT 'SCTG em faixa agregada (ex.: 01-05)', count(*) FILTER (WHERE contains(SCTG, '-')) FROM cfs_tratada
+  UNION ALL SELECT 'Origem NN-00000 (metrópole suprimida, estado visível)', count(*) FILTER (WHERE ORIG_MA = '00000' AND ORIG_STATE <> '00') FROM cfs_tratada
+  UNION ALL SELECT 'Origem 00-00000 (origem totalmente suprimida)', count(*) FILTER (WHERE ORIG_STATE = '00') FROM cfs_tratada
+  UNION ALL SELECT 'EXPORT_CNTRY = N (não é exportação)', count(*) FILTER (WHERE EXPORT_CNTRY = 'N') FROM cfs_tratada
+  UNION ALL SELECT 'MODE = 30 (modal desconhecido)', count(*) FILTER (WHERE MODE = '30') FROM cfs_tratada")
+faixas <- q("SELECT SCTG, count(*) AS linhas FROM cfs_tratada WHERE contains(SCTG, '-') GROUP BY 1 ORDER BY 2 DESC")
+codigos$`% das linhas` <- pct(codigos$linhas, n_total)
+tabela(codigos, col.names = c("Código", "Linhas", "% das linhas"))
+```
+
+O sigilo do Census (colapsamento) atinge sobretudo a **mercadoria**: `r n_fmt(flags[["fl_sctg_colapsado"]])`
+linhas têm SCTG `00` ou uma faixa agregada (`r paste(faixas$SCTG, collapse = ", ")`). A origem é
+colapsada em `r n_fmt(flags[["fl_origem_ma_suprimida"]] + flags[["fl_origem_suprimida"]])` linhas, e
+em todas elas a mercadoria também está colapsada. Em `r n_fmt(flags[["fl_origem_suprimida"]])` linhas
+nem o estado de origem é conhecido (`00-00000`).
+
+Três situações parecidas não são a mesma coisa:
+
+- **Fora do escopo:** SCTG 16 (petróleo bruto) não existe na CFS 2022.
+- **Suprimido por sigilo:** SCTG `00`, faixas, `NN-00000` e `00-00000`.
+- **Não aplicável:** `EXPORT_CNTRY = 'N'` nas remessas que não são exportação.
+
+Também **não é ausência** o código `99999` da metrópole (`NN-99999`): ele significa "restante do
+estado", uma área real.
+
+**Decisão.** As linhas ficam na base e recebem flags (`fl_sctg_colapsado`, `fl_origem_ma_suprimida`,
+`fl_origem_suprimida`). Elas entram nos totais e saem só dos cortes em que atrapalham: por exemplo, a
+análise de dependência entre origem e destino (P2) exclui a origem suprimida.
+
+## 3. Valores ausentes
+
+```{r}
+#| label: ausentes
+nulos <- unlist(q(paste("SELECT", paste(sprintf("count(*) - count(%s) AS %s", names(TIPOS_CFS),
+                                                names(TIPOS_CFS)), collapse = ", "),
+                        "FROM cfs_tratada")))
+vazios <- q(sprintf("SELECT count(*) AS n FROM %s WHERE %s", leitura_bruta,
+                    paste(sprintf("trim(%s) = ''", names(TIPOS_CFS)), collapse = " OR ")))$n
+```
+
+Nenhuma das 18 colunas tem valor nulo (soma de nulos: **`r n_fmt(sum(nulos))`**) nem campo vazio no
+CSV (**`r n_fmt(vazios)`** linhas com algum campo vazio). Toda ausência de informação está
+**codificada** (item 2), por isso não há imputação nem remoção por ausência.
+
+## 4. Valores impossíveis ou suspeitos
+
+```{r}
+#| label: suspeitos
+faixa <- q("SELECT min(SHIPMT_VALUE) AS vmin, max(SHIPMT_VALUE) AS vmax, min(SHIPMT_WGHT) AS pmin,
+                   max(SHIPMT_WGHT) AS pmax, min(SHIPMT_DIST_GC) AS dmin, max(SHIPMT_DIST_GC) AS dmax,
+                   min(WGT_FACTOR) AS fmin, max(WGT_FACTOR) AS fmax,
+                   count(*) FILTER (WHERE SHIPMT_VALUE = 30000000) AS no_teto,
+                   count(*) FILTER (WHERE SHIPMT_VALUE > 30000000) AS acima_teto
+            FROM cfs_tratada")
+divisa <- q("SELECT count(*) AS n FROM cfs_tratada
+             WHERE ORIG_STATE <> '00' AND ORIG_STATE <> DEST_STATE AND SHIPMT_DIST_GC <= 1")$n
+pequenos <- q("SELECT SCTG FROM cfs_tratada GROUP BY 1 HAVING count(*) < 1000 ORDER BY count(*)")
+```
+
+| Variável | Mínimo | Máximo |
+|---|---|---|
+| `SHIPMT_VALUE` (US$) | `r n_fmt(faixa$vmin)` | `r n_fmt(faixa$vmax)` |
+| `SHIPMT_WGHT` (lb) | `r n_fmt(faixa$pmin)` | `r n_fmt(faixa$pmax)` |
+| `SHIPMT_DIST_GC` (milhas) | `r n_fmt(faixa$dmin)` | `r n_fmt(faixa$dmax)` |
+| `WGT_FACTOR` | `r n_fmt(faixa$fmin, 1)` | `r n_fmt(faixa$fmax, 1)` |
+
+Não há zeros em valor, peso ou distância: o mínimo é 1, efeito do arredondamento para inteiro feito
+pelo Census. Os casos suspeitos recebem flags:
+
+| Flag | Regra | Linhas |
+|---|---|---|
+| `fl_valor_teto` | valor ≥ US$ 30.000.000 (teto de truncamento do guia) | `r n_fmt(flags[["fl_valor_teto"]])` (`r n_fmt(faixa$no_teto)` exatamente no teto e `r n_fmt(faixa$acima_teto)` acima) |
+| `fl_fator_teto` | `WGT_FACTOR` ≥ 3.588.000 (teto do guia) | `r n_fmt(flags[["fl_fator_teto"]])` |
+| `fl_fator_menor_1` | `WGT_FACTOR` < 1 | `r n_fmt(flags[["fl_fator_menor_1"]])` |
+| `fl_razao_atipica` | razão valor/peso abaixo do percentil 0,1% ou acima do 99,9% do próprio SCTG | `r n_fmt(flags[["fl_razao_atipica"]])` |
+
+Há ainda `r n_fmt(divisa)` remessas entre estados diferentes com distância em linha reta de até 1 milha
+(origem conhecida); são casos de divisa, plausíveis, e não recebem flag.
+
+**Decisão: manter e marcar.** O Census ajustou valor e peso de cada remessa preservando o produto de
+cada um com o `WGT_FACTOR` (guia oficial); remover ou aparar extremos mudaria os totais. O fator menor
+que 1 é previsto pela nota 5 do guia: ocorre quando a receita do Economic Census é menor que o valor
+ponderado da CFS. A razão atípica é medida dentro da mercadoria, como a verificação de razão
+valor/peso descrita na metodologia de 2022; em SCTG com poucas linhas (`r paste(pequenos$SCTG, collapse = ", ")`,
+todos com menos de 1.000), o mínimo e o máximo do grupo sempre ficam marcados.
+
+## 5. Duplicações
+
+```{r}
+#| label: duplicadas
+# GROUP BY transborda para o disco; count(DISTINCT) guarda tudo na memoria
+distintos <- function(colunas) {
+  q(sprintf("SELECT count(*) AS n FROM (SELECT %s FROM cfs_tratada GROUP BY ALL)",
+            paste(colunas, collapse = ", ")))$n
+}
+dup <- list(ids = n_total - distintos("SHIPMT_ID"),
+            linhas = n_total - distintos(setdiff(names(TIPOS_CFS), "SHIPMT_ID")))
+```
+
+`SHIPMT_ID` é único (`r n_fmt(dup$ids)` repetições). Mas `r n_fmt(dup$linhas)` linhas
+(`r pct(dup$linhas, n_total)`) são idênticas a outra em todas as demais 17 colunas.
+
+**Decisão: manter.** O Census não trata esse caso explicitamente, então a justificativa é uma
+**inferência** do grupo a partir do desenho da pesquisa (2022 CFS Methodology): cada estabelecimento
+informa até 40 remessas por semana (ou uma a cada T, com teto de 60 a 100), cada parada de uma rota
+conta como uma remessa, valores inconsistentes são preenchidos por hot-deck e valor, peso e distância
+são arredondados para inteiro. Remessas diferentes do mesmo estabelecimento podem, assim, ficar
+idênticas no arquivo. Como a base não traz identificador de estabelecimento, não é possível confirmar.
+
+## 6. Unidades de medida
+
+| Variável | Unidade original | Derivada criada |
+|---|---|---|
+| `SHIPMT_VALUE` | US$, valor FOB da mercadoria na origem (não é o frete) | — |
+| `SHIPMT_WGHT` | libras | `peso_t` = libras × `r num_br(LIBRA_EM_T)` (toneladas métricas) |
+| `SHIPMT_DIST_GC` | milhas em linha reta (great circle), não a rota real | `dist_km` = milhas × `r num_br(MILHA_EM_KM)` |
+| `WGT_FACTOR` | número de remessas que a linha representa | — |
+
+As unidades originais ficam na base, para comparar com as tabelas oficiais do Census.
+
+## 7. Categorias com poucos registros
+
+```{r}
+#| label: raras
+menores <- function(col, so_areas_identificadas = FALSE) {
+  filtro <- if (so_areas_identificadas) "ORIG_MA <> '00000'" else "TRUE"
+  r <- q(sprintf("SELECT %s, count(*) AS linhas FROM cfs_tratada WHERE %s GROUP BY 1 ORDER BY 2 LIMIT 5",
+                 DBI::dbQuoteIdentifier(con, col), filtro))
+  r <- rotular(r, dic, col)
+  data.frame(Código = r[[col]], Descrição = r[[paste0(col, "_desc")]],
+             Linhas = r$linhas, `% das linhas` = pct(r$linhas, n_total, 4), check.names = FALSE)
+}
+tabela(menores("MODE"), caption = "Modais (MODE) com menos linhas")
+tabela(menores("SCTG"), caption = "Mercadorias (SCTG) com menos linhas")
+tabela(menores("ORIG_CFS_AREA", so_areas_identificadas = TRUE),
+       caption = "Áreas de origem identificadas (ORIG_CFS_AREA) com menos linhas")
+```
+
+As 5 áreas de origem com menos linhas seriam todas códigos suprimidos (`NN-00000` e `00-00000`, item
+2), que não são áreas reais; por isso a tabela mostra as 5 menores entre as áreas identificadas.
+
+**Decisão.** Os 16 códigos de modal e todos os SCTG ficam, sem agrupamento. Nas análises,
+comparações que envolvam categorias raras vão trazer a confiabilidade da estimativa, medida pelo
+coeficiente de variação (CV) com o método oficial do guia (GVF) e um número mínimo de linhas por
+célula; os valores desses limites serão definidos nas análises.
+
+## 8. Necessidade de combinar arquivos
+
+```{r}
+#| label: dicionario
+sctg_base <- q("SELECT DISTINCT SCTG FROM cfs_tratada")$SCTG
+sctg_ausentes <- setdiff(trimws(dic$VALUE_CODE[dic$VARIABLE == "SCTG"]), sctg_base)
+areas_base <- q("SELECT DISTINCT ORIG_CFS_AREA FROM cfs_tratada")$ORIG_CFS_AREA
+supr_dic <- grep("-00000$", dic$VALUE_CODE[dic$VARIABLE == "ORIG_CFS_AREA"], value = TRUE)
+```
+
+A base é **um único arquivo**; não há junção entre tabelas de dados. A única combinação é com o
+dicionário oficial, só para exibir rótulos (como nas tabelas deste relatório), sem gravar rótulos na
+base. Dois cuidados:
+
+- O dicionário chama a coluna de temperatura de `TEMP_CNTRL_YN`, e a base de `TEMP_CNTL_YN`; a
+  função de rótulos faz essa tradução.
+- O dicionário traz códigos que não aparecem na base: SCTG `r paste(sctg_ausentes, collapse = ", ")`
+  e `r sum(!supr_dic %in% areas_base)` dos `r length(supr_dic)` códigos de origem suprimida
+  (`NN-00000`).
+
+## 9. Variáveis derivadas
+
+```{r}
+#| label: derivadas
+regras <- c(
+  peso_t = "SHIPMT_WGHT em toneladas métricas",
+  dist_km = "SHIPMT_DIST_GC em quilômetros",
+  fl_sctg_colapsado = "SCTG = 00 ou faixa agregada",
+  fl_origem_ma_suprimida = "metrópole de origem suprimida, estado visível",
+  fl_origem_suprimida = "origem totalmente suprimida (00-00000)",
+  fl_exportacao = "EXPORT_YN = Y",
+  fl_intra_area = "origem e destino na mesma área CFS",
+  fl_valor_teto = "valor ≥ US$ 30.000.000",
+  fl_fator_teto = "WGT_FACTOR ≥ 3.588.000",
+  fl_fator_menor_1 = "WGT_FACTOR < 1",
+  fl_razao_atipica = "razão valor/peso fora dos percentis 0,1% e 99,9% do SCTG"
+)
+tabela(data.frame(
+  Coluna = names(regras), Regra = unname(regras),
+  `Linhas verdadeiras` = c("—", "—", n_fmt(flags[names(regras)[-(1:2)]])),
+  check.names = FALSE
+))
+```
+
+As flags servem para excluir cada grupo só onde ele atrapalha. Por exemplo, nas exportações
+(`r n_fmt(flags[["fl_exportacao"]])` linhas) o destino registrado é o porto ou a fronteira de saída,
+não o destino final; por isso a análise de dependência entre origem e destino (P2) roda sem elas e
+sem a origem suprimida. Não há colunas ponderadas por linha (ver o item 10).
+
+## 10. Uso de pesos amostrais
+
+```{r}
+#| label: pesos
+remessas <- q("SELECT sum(WGT_FACTOR) AS n FROM cfs_tratada")$n
+md <- q("SELECT count(*) AS n, sum(SHIPMT_VALUE * WGT_FACTOR) AS valor FROM cfs_tratada
+         WHERE ORIG_STATE = '24'")
+md_guia <- c(n = 612317, valor = 198598788295)
+# Medianas pelas contagens de cada peso distinto: median() guarda a coluna
+# inteira na memoria, fora do memory_limit. Sem fator, a media das duas
+# posicoes centrais (n // 2 + 1 e (n + 1) // 2) e a mediana exata.
+medianas <- q("
+  WITH g AS (SELECT SHIPMT_WGHT AS v, count(*) AS c, sum(WGT_FACTOR) AS f FROM cfs_tratada GROUP BY 1),
+       o AS (SELECT v, sum(c) OVER w AS acum_c, sum(f) OVER w AS acum_f,
+                    sum(c) OVER () AS n, sum(f) OVER () AS total FROM g WINDOW w AS (ORDER BY v))
+  SELECT (min(v) FILTER (WHERE acum_c >= (n + 1) // 2) + min(v) FILTER (WHERE acum_c >= n // 2 + 1)) / 2
+           AS sem_peso,
+         min(v) FILTER (WHERE acum_f >= total / 2) AS ponderada FROM o")
+encomenda <- q("
+  WITH g AS (SELECT MODE = '21' AS encomenda, SHIPMT_WGHT AS v, count(*) AS c, sum(WGT_FACTOR) AS f
+             FROM cfs_tratada GROUP BY ALL),
+       o AS (SELECT *, sum(c) OVER (PARTITION BY encomenda ORDER BY v) AS acum,
+                    sum(c) OVER (PARTITION BY encomenda) AS n FROM g)
+  SELECT encomenda, sum(c) AS linhas, sum(f) AS remessas,
+         (min(v) FILTER (WHERE acum >= (n + 1) // 2) + min(v) FILTER (WHERE acum >= n // 2 + 1)) / 2
+           AS mediana
+  FROM o GROUP BY 1")
+enc <- encomenda[encomenda$encomenda, ]
+```
+
+O arquivo é uma **amostra**: cada linha representa `WGT_FACTOR` remessas reais de 2022. Por isso o
+fator de ponderação entra **só em agregações** (contagem de remessas, valor total de uma rota ou
+grupo) e nunca como coluna por linha: "peso × fator" numa linha faria parecer que uma carga muito
+pesada foi transportada, quando uma carga de peso X foi transportada várias vezes.
+
+- **Número estimado de remessas:** a soma de `WGT_FACTOR` dá **`r n_fmt(remessas)`** remessas em 2022,
+  representadas por `r n_fmt(n_total)` linhas.
+- **Checagem do guia (Maryland):** com origem em Maryland (`ORIG_STATE = '24'`), a base tem
+  `r n_fmt(md$n)` linhas e valor estimado Σ(valor × fator) de US$ `r n_fmt(md$valor)`. O guia oficial
+  publica `r n_fmt(md_guia[["n"]])` linhas e US$ `r n_fmt(md_guia[["valor"]])`; a diferença de
+  US$ `r n_fmt(md$valor - md_guia[["valor"]])` vem do arredondamento numérico. A base tratada
+  reproduz, portanto, o resultado oficial publicado no guia.
+- **Com e sem o fator de ponderação:** a mediana do peso por remessa é de `r n_fmt(medianas$sem_peso)` lb
+  contando linhas e de `r n_fmt(medianas$ponderada)` lb ponderando pelo fator.
+
+```{r}
+#| label: tabela-encomenda
+tabela(data.frame(
+  Grupo = ifelse(encomenda$encomenda, "Encomendas (MODE 21)", "Demais modais"),
+  `% das linhas` = pct(encomenda$linhas, sum(encomenda$linhas)),
+  `% das remessas estimadas` = pct(encomenda$remessas, sum(encomenda$remessas)),
+  `Mediana do peso (lb, sem fator)` = encomenda$mediana,
+  check.names = FALSE
+))
+```
+
+A remessa típica do arquivo pesa `r n_fmt(medianas$sem_peso)` lb, e a remessa típica estimada para os
+EUA pesa `r n_fmt(medianas$ponderada)` lb. A diferença acompanha as encomendas (MODE 21): são
+`r pct(enc$linhas, n_total)` das linhas do arquivo, mas `r pct(enc$remessas, remessas)` das remessas
+estimadas, com mediana de `r n_fmt(enc$mediana)` lb. Contar linhas sem o fator de ponderação descreve a
+amostra sorteada, não a população de remessas. Por isso, nas próximas seções, distribuições por
+remessa aparecem com e sem o fator, lado a lado.
+
+## Correções ao Check-in 1
+
+- **Zeros:** o Check-in 1 dizia que zero em peso, valor ou distância podia ser arredondamento; na base
+  completa não há nenhum zero (mínimo 1).
+- **Teto de valor:** não é rígido; `r n_fmt(faixa$acima_teto)` linhas passam de US$ 30 milhões (máximo
+  US$ `r n_fmt(faixa$vmax)`). O guia descreve ruído e *topcoding* aplicados depois do truncamento, mas
+  não confirma que esses casos venham daí (ver as dúvidas em aberto).
+- **Colapsamento:** atinge sobretudo a mercadoria (`r n_fmt(flags[["fl_sctg_colapsado"]])` linhas), e
+  não a origem (`r n_fmt(flags[["fl_origem_ma_suprimida"]] + flags[["fl_origem_suprimida"]])` linhas).
+- **Nível estado:** também é afetado: em `r n_fmt(flags[["fl_origem_suprimida"]])` linhas a origem é
+  `00-00000`, sem estado.
+
+## Dúvidas em aberto
+
+- Os `r n_fmt(faixa$acima_teto)` valores acima de US$ 30 milhões são ruído legítimo do Census ou erro
+  na exportação do arquivo? A documentação não permite decidir.
+- Por que o dicionário traz códigos que não aparecem na base (item 8)? Hipótese: não houve remessas
+  nesses casos.
+- Os limites de confiabilidade (CV máximo e mínimo de linhas por célula) serão definidos nas análises.
+

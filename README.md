@@ -264,7 +264,7 @@ hipóteses.
 
 | Seção | Tema | Situação |
 |---|---|---|
-| 1 | Preparação e qualidade dos dados | **Pronta**: `reports/secao1_qualidade.qmd` |
+| 1 | Preparação e qualidade dos dados | **Pronta**: `reports/secao1_qualidade.qmd` (e no `reports/checkin2.qmd`) |
 | 2 | Dimensão da base após a preparação | **Calculada**: `scripts/03_secao2_dimensao.R` |
 | 3 | Análise descritiva de 8 a 10 variáveis, incluindo as 5 do Check-in 1 | **Calculada**: `scripts/04_secao3_descritiva.R` |
 | 4 | Visualização das distribuições | **Calculada**: `scripts/05_secao4_distribuicoes.R` |
@@ -732,6 +732,31 @@ nasceu, e em 48 dos 51 estados a maior fonte de carga é o próprio estado.**
   foram para `R/graficos.R`, para as Seções 4 e 5 usarem o mesmo texto.
 - **Como continuar:** `graficos_secao5(obter_resultados(base, 5)$secao5)` devolve os cinco gráficos.
 
+#### O relatório do Check-in 2 em PDF (em andamento)
+
+**As Seções 1 a 5 já estão num PDF só, de 22 páginas, com todos os gráficos e na identidade visual
+do grupo. Ele cresce a cada seção que fica pronta.**
+
+- **O que foi feito:** o `reports/checkin2.qmd` junta as cinco seções num PDF:
+  - **capa e "Em resumo":** seis números grandes, como ler "sem fator" e "com fator", e o sumário;
+  - **uma página de abertura por seção**, com uma linha no rodapé que mostra em qual das 8 seções o
+    leitor está;
+  - **os gráficos** com o mesmo papel, fonte e cores do texto.
+- **Decisões e por quê:**
+  - **só PDF por enquanto:** a versão interativa vira o dashboard, num planejamento próprio;
+  - **as fontes vão junto com o projeto** (`reports/fontes/`, com licença livre): o PDF sai igual em
+    qualquer computador, sem instalar nada;
+  - **cinza é contexto, cor é a história** (do livro *Storytelling with Data*): marinho para a
+    amostra, laranja para as remessas estimadas, e nos modais só caminhão e encomenda ganham cor;
+  - **o título de cada gráfico diz a conclusão**, e não só o que o gráfico mostra.
+- **O que mudou:**
+  - a Seção 1 tem agora um corpo só (`reports/_secao1_corpo.qmd`), usado tanto pelo relatório da
+    Seção 1 quanto pelo PDF do check-in;
+  - os títulos das tabelas, que o PDF da Seção 1 perdia, voltaram a aparecer.
+- **Como continuar:** `quarto render reports/checkin2.qmd` gera o `reports/checkin2.pdf` em cerca de
+  1,5 min. Quando uma das Seções 6 a 8 ficar pronta, ela entra no lugar da linha "Em construção" de
+  "Próximos passos".
+
 ---
 
 ## 4. Instalação e uso
@@ -814,8 +839,9 @@ base |> count(SCTG) |> collect() |> rotular(dic, "SCTG")
 ### 4.5 Relatórios e testes
 
 ```bash
-quarto render reports/secao1_qualidade.qmd   # gera .html e .pdf em reports/, em cerca de 45 s
-Rscript tests/testthat.R                     # 110 verificações, em cerca de 1 min
+quarto render reports/checkin2.qmd           # o PDF do Check-in 2 (Seções 1 a 5), em cerca de 1,5 min
+quarto render reports/secao1_qualidade.qmd   # só a Seção 1, em .html e .pdf, em cerca de 2,5 min
+Rscript tests/testthat.R                     # 289 verificações, em cerca de 1 min
 ```
 
 O `reports/.Rprofile` ativa o renv do projeto durante a geração do relatório.

@@ -1,0 +1,493 @@
+---
+title: "Explorando a CFS 2022"
+subtitle: "Check-in 2 — o que aprendemos sobre a base antes de modelá-la"
+author:
+  - name: "Gabriel"
+  - name: "Gustavo"
+date: today
+date-format: "DD/MM/YYYY"
+lang: pt
+format:
+  typst:
+    template-partials:
+      - typst-template.typ
+    font-paths:
+      - fontes
+    papersize: a4
+    fig-width: 6.5
+    fig-dpi: 200
+    fig-format: png
+execute:
+  echo: false
+  warning: false
+  message: false
+knitr:
+  opts_chunk:
+    dev: "ragg_png"
+---
+
+```{r}
+#| label: setup
+suppressMessages(source(here::here("scripts", "00_setup.R")))
+source(here::here("scripts", "02_trata_base.R"))
+source(here::here("scripts", "10_resultados.R"))
+# Os scripts das secoes so definem objetos; daqui vem graficos_secaoN().
+source(here::here("scripts", "05_secao4_distribuicoes.R"))
+source(here::here("scripts", "06_secao5_relacoes.R"))
+registrar_fontes_cfs()
+
+base <- suppressMessages(obter_base_tratada(pipeline = FALSE))
+res <- obter_resultados(base, 2:5)
+g4 <- graficos_secao4(res$secao4)
+g5 <- graficos_secao5(res$secao5)
+
+pct1 <- function(x, d = 1) paste0(n_fmt(x, d), "%")
+mediana <- function(coluna, serie) {
+  x <- res$secao3$numericas
+  x[[serie]][x$coluna == coluna & x$medida == "mediana"]
+}
+modal <- function(familia, serie) res$secao4$modal[[serie]][res$secao4$modal$familia_modal == familia]
+completa <- res$secao2$populacoes[res$secao2$populacoes$populacao == "completa", ]
+intra <- res$secao5$intraestadual[res$secao5$intraestadual$ORIG_STATE == "Total", ]
+
+# Bloco Typst cru: o knitr nao avalia codigo dentro dele.
+typst <- function(...) knitr::asis_output(paste0("\n```{=typst}\n", paste0(...), "\n```\n"))
+numero <- function(valor, rotulo, destaque = FALSE) {
+  sprintf('numero([%s], [%s]%s)', valor, rotulo, if (destaque) ", destaque: true" else "")
+}
+```
+
+# Em resumo
+
+Este documento reúne as Seções 1 a 5 do Check-in 2, calculadas sobre a base inteira, sem amostragem.
+A pergunta do check-in é *"o que conseguimos aprender sobre os dados antes de modelá-los?"*: ainda
+não entram modelos, testes de hipóteses nem *clustering*. As Seções 6 a 8 entram à medida que o
+grupo toma as decisões.
+
+```{r}
+#| label: resumo-numeros
+typst(
+  "#grid(columns: (1fr, 1fr, 1fr), column-gutter: 8pt, row-gutter: 8pt,\n",
+  numero(n_fmt(completa$linhas), "linhas no arquivo, uma por remessa amostrada"), ",\n",
+  numero("0", "linhas removidas: cada problema virou uma marcação"), ",\n",
+  numero(paste(n_fmt(completa$remessas / 1e9, 1), "bi"), "remessas estimadas nos EUA em 2022 (soma do `WGT_FACTOR`)"), ",\n",
+  numero(paste(n_fmt(mediana("SHIPMT_WGHT", "sem_fator")), "lb"), "peso da remessa mediana na amostra (sem fator)"), ",\n",
+  numero(paste(n_fmt(mediana("SHIPMT_WGHT", "com_fator")), "lb"), "peso da remessa mediana estimada (com fator)", TRUE), ",\n",
+  numero(pct1(intra$pct_toneladas, 0), "das toneladas estimadas não saem do estado de origem", TRUE), ",\n",
+  ")"
+)
+```
+
+## Como ler os números
+
+- **Sem fator** conta as linhas do arquivo e descreve a **amostra** sorteada pelo Census.
+- **Com fator** soma o `WGT_FACTOR` e estima as **remessas reais** dos EUA em 2022. O fator entra
+  só em agregações (contagens, somas, quantis), nunca multiplicado em cada linha.
+- As duas versões contam histórias diferentes. Encomendas são `r pct1(modal("Encomenda", "pct_linhas"), 0)`
+  das linhas, mas `r pct1(modal("Encomenda", "pct_remessas"), 0)` das remessas estimadas; por isso,
+  com o fator, a remessa típica pesa só `r n_fmt(mediana("SHIPMT_WGHT", "com_fator"))` libras.
+- Cada tabela e cada gráfico dizem a **população** usada: a base completa ou um recorte dela
+  (Seção 2).
+- Os gráficos seguem a mesma regra de cor: **marinho** para a amostra (sem fator) e **laranja**
+  para as remessas estimadas (com fator); cinza é contexto.
+
+## Neste documento
+
+```{=typst}
+#outline(title: none, depth: 1)
+```
+
+# Seção 1 — Preparação e qualidade dos dados
+
+{{< include _secao1_corpo.qmd >}}
+
+# Seção 2 — Dimensão da base
+
+```{r}
+#| label: s2-dados
+d2 <- res$secao2
+dim2 <- setNames(d2$dimensao$valor, d2$dimensao$medida)
+```
+
+A base tratada tem as mesmas **`r n_fmt(dim2[["Linhas na base tratada"]])` linhas** do arquivo
+original e **`r dim2[["Colunas na base tratada"]]` colunas**: as `r dim2[["Colunas originais"]]`
+originais, `r dim2[["Colunas derivadas"]]` novas (peso em toneladas e distância em km) e
+`r dim2[["Flags de qualidade"]]` marcações de qualidade. Nenhuma linha foi removida.
+
+```{r}
+#| label: s2-colunas
+#| results: asis
+cols <- d2$colunas
+for (g in unique(cols$grupo)) {
+  no_grupo <- cols$coluna[cols$grupo == g]
+  cat("- **", g, " (", length(no_grupo), "):** ", paste0("`", no_grupo, "`", collapse = ", "), "\n", sep = "")
+}
+```
+
+## As quatro populações
+
+Cada análise usa uma de quatro populações. Nenhuma linha é apagada: cada análise escolhe a
+população que faz sentido para a pergunta, e a tabela diz qual usou.
+
+```{r}
+#| label: s2-populacoes
+p <- d2$populacoes
+tabela(data.frame(
+  População = p$descricao,
+  Linhas = n_fmt(p$linhas),
+  `% linhas` = pct1(p$pct_linhas, 2),
+  `% remessas` = pct1(p$pct_remessas, 2),
+  `Onde é usada` = p$uso,
+  check.names = FALSE
+), align = "lrrrl", caption = "Populações de análise")
+```
+
+Na população "origem por área" saem as linhas com a metrópole de origem escondida pelo Census e
+também as com o estado escondido, porque nelas a área também não aparece. As regras ficam num lugar
+só, `R/populacoes.R`, e são escritas com as marcações da base:
+
+```{r}
+#| label: s2-regras
+#| results: asis
+cat(paste0("- **", p$descricao, ":** `", p$regra, "`\n"), sep = "")
+```
+
+# Seção 3 — Descritiva das variáveis
+
+```{r}
+#| label: s3-dados
+d3 <- res$secao3
+```
+
+A seção descreve as 5 variáveis do Check-in 1 (origem, destino, mercadoria, modal e peso) e mais 3
+(valor, distância e setor), sobre a base completa, para mostrar também os códigos escondidos e
+agregados. Cada medida aparece **sem o fator** (a amostra) e **com o fator** (as remessas
+estimadas).
+
+## Peso, valor e distância
+
+Peso, valor e distância são muito assimétricos: a remessa típica pesa
+`r n_fmt(mediana("SHIPMT_WGHT", "sem_fator"))` libras, mas a média passa de
+`r n_fmt(floor(d3$numericas$sem_fator[d3$numericas$coluna == "SHIPMT_WGHT" & d3$numericas$medida == "media"] / 100) * 100)`.
+Por isso a tabela mostra mediana e quartis, e não só a média.
+
+```{r}
+#| label: s3-numericas
+MEDIDAS <- c(media = "Média", dp = "Desvio padrão", minimo = "Mínimo", q1 = "1º quartil",
+             mediana = "Mediana", q3 = "3º quartil", maximo = "Máximo")
+# "\\$": sem o escape, o Pandoc le o trecho entre dois cifroes como formula.
+VARIAVEIS <- c(SHIPMT_WGHT = "Peso (lb)", SHIPMT_VALUE = "Valor (US\\$)", SHIPMT_DIST_GC = "Distância (mi)")
+num <- d3$numericas
+celula <- function(coluna, serie) {
+  vapply(names(MEDIDAS), function(m) n_fmt(num[[serie]][num$coluna == coluna & num$medida == m]), character(1))
+}
+t3 <- data.frame(Medida = unname(MEDIDAS))
+for (col in names(VARIAVEIS)) {
+  t3[[paste(VARIAVEIS[[col]], "sem fator")]] <- celula(col, "sem_fator")
+  t3[[paste(VARIAVEIS[[col]], "com fator")]] <- celula(col, "com_fator")
+}
+tabela(t3, align = "lrrrrrr", caption = "Medidas das variáveis numéricas (base completa, unidades originais)")
+```
+
+As mesmas medidas existem também em toneladas e em km (colunas `peso_t` e `dist_km`), em
+`obter_resultados(base, 3)$secao3$numericas`. Os quartis com fator são calculados sem trazer a
+coluna inteira para a memória, para caber num computador de 4 GB.
+
+## As categorias mais frequentes
+
+```{r}
+#| label: s3-maiores
+#| results: asis
+TITULOS3 <- c(MODE = "Modal (MODE)", SECTOR = "Setor de quem envia (SECTOR)",
+              SCTG = "Mercadoria (SCTG)", ORIG_CFS_AREA = "Área CFS de origem",
+              DEST_CFS_AREA = "Área CFS de destino")
+for (v in names(TITULOS3)) {
+  m <- d3$maiores[d3$maiores$variavel == v, ]
+  print(tabela(data.frame(
+    Código = m$codigo, Descrição = m$rotulo, Linhas = n_fmt(m$linhas),
+    `% linhas` = pct1(m$pct_linhas), `% remessas` = pct1(m$pct_remessas), check.names = FALSE
+  ), align = "llrrr", caption = paste0(TITULOS3[[v]], ": as maiores categorias")))
+  cat("\n\n")
+}
+```
+
+As descrições vêm do dicionário oficial do Census, em inglês. A linha "Demais" soma as categorias
+que ficaram fora da lista.
+
+## Categorias raras ou problemáticas
+
+```{r}
+#| label: s3-raras
+r <- d3$raras
+tabela(data.frame(
+  Variável = r$variavel, Código = r$codigo, Descrição = r$rotulo, Linhas = n_fmt(r$linhas),
+  `% linhas` = pct1(r$pct_linhas, 3), Motivo = r$motivo, check.names = FALSE
+), align = "lllrrl", caption = "SCTG escondido ou agregado em faixa, SCTG com menos de 1.000 linhas e modal desconhecido")
+```
+
+## Áreas CFS
+
+```{r}
+#| label: s3-areas
+a <- d3$areas
+tabela(data.frame(
+  Área = ifelse(a$variavel == "ORIG_CFS_AREA", "Origem", "Destino"),
+  Áreas = a$categorias,
+  `10 maiores, % linhas` = pct1(a$pct_linhas_10_maiores),
+  `10 maiores, % remessas` = pct1(a$pct_remessas_10_maiores),
+  `Restante do estado (áreas)` = a$restante_categorias,
+  `Restante do estado, % linhas` = pct1(a$restante_pct_linhas),
+  `Suprimidas, linhas` = n_fmt(a$suprimidas_linhas),
+  check.names = FALSE
+), align = "lrrrrrr", caption = "Concentração das áreas CFS")
+```
+
+"Restante do estado" (código `NN-99999`) é uma área real: a parte do estado fora das metrópoles.
+
+# Seção 4 — Distribuições em gráficos
+
+Oito gráficos mostram como as variáveis se espalham. Todo gráfico traz as duas versões lado a lado,
+**sem o fator** e **com o fator**; o título diz o que ele mostra, e o rodapé diz a população usada.
+Nada é sorteado: as faixas e os quantis vêm da base inteira, calculados no banco.
+
+<!-- Os blocos "breakable: false" mantem o texto de abertura na mesma pagina do grafico. -->
+
+## Peso e valor
+
+```{=typst}
+#block(breakable: false)[
+```
+
+Histogramas em escala log, porque peso e valor vão de 1 a milhões.
+
+```{r}
+#| label: s4-peso
+#| fig-height: 4.4
+g4$peso
+```
+
+```{=typst}
+]
+```
+
+```{r}
+#| label: s4-valor
+#| fig-height: 4.4
+g4$valor
+```
+
+## Distância
+
+```{=typst}
+#block(breakable: false)[
+```
+
+Um terço das remessas viaja menos de 100 km, mas outro terço passa de 1.000 km.
+
+```{r}
+#| label: s4-distancia
+#| fig-height: 3.6
+g4$distancia
+```
+
+```{=typst}
+]
+```
+
+```{r}
+#| label: s4-faixas
+f <- res$secao4$distancia_faixas
+tabela(data.frame(`Distância em linha reta` = f$faixa, `% linhas` = pct1(f$pct_linhas),
+                  `% remessas estimadas` = pct1(f$pct_remessas), check.names = FALSE),
+       align = "lrr", caption = "Faixas de distância (base completa)")
+```
+
+## Modal e setor
+
+```{=typst}
+#block(breakable: false)[
+```
+
+Caminhão e encomenda somam mais de 90% das linhas. Caminhão tem
+`r pct1(modal("Caminhão", "pct_linhas"))` das linhas e `r pct1(modal("Caminhão", "pct_remessas"))`
+das remessas estimadas; encomenda tem `r pct1(modal("Encomenda", "pct_linhas"))` e
+`r pct1(modal("Encomenda", "pct_remessas"))`.
+
+```{r}
+#| label: s4-modal
+#| fig-height: 3.9
+g4$modal
+```
+
+```{=typst}
+]
+```
+
+```{r}
+#| label: s4-setor
+#| fig-height: 3.5
+g4$setor
+```
+
+## Mercadoria
+
+```{=typst}
+#block(breakable: false)[
+```
+
+As 15 mercadorias com mais linhas, mais o grupo escondido ou agregado em faixa pelo Census.
+
+```{r}
+#| label: s4-mercadoria
+#| fig-height: 5.2
+g4$mercadoria
+```
+
+```{=typst}
+]
+```
+
+## Origem e destino
+
+```{=typst}
+#block(breakable: false)[
+```
+
+O gráfico de origem usa só as linhas com a área de origem identificada; o de destino usa a
+população geográfica (sem exportações e sem origem escondida).
+
+```{r}
+#| label: s4-origem
+#| fig-height: 5.4
+g4$origem
+```
+
+```{=typst}
+]
+```
+
+```{r}
+#| label: s4-destino
+#| fig-height: 5.4
+g4$destino
+```
+
+# Seção 5 — Relações entre variáveis
+
+Cinco relações, cruzando as variáveis duas a duas. As caixas são desenhadas a partir dos quantis
+calculados no banco, sem trazer as remessas para o R.
+
+## Peso × distância
+
+```{=typst}
+#block(breakable: false)[
+```
+
+Peso e distância têm correlação negativa fraca: o coeficiente de Pearson dos logs é
+`r num_br(round(res$secao5$correlacao$pearson_sem_fator, 2))`, calculado sobre
+`r n_fmt(res$secao5$correlacao$linhas)` linhas. A correlação sai só **sem fator**: a versão com
+o fator é um uso novo da ponderação e espera validação.
+
+```{r}
+#| label: s5-peso-distancia
+#| fig-height: 4.2
+g5$peso_distancia
+```
+
+```{=typst}
+]
+```
+
+## Peso e distância por modal
+
+```{=typst}
+#block(breakable: false)[
+```
+
+A caixa vai do 1º ao 3º quartil, o traço marca a mediana e a haste vai do percentil 10 ao 90.
+
+```{r}
+#| label: s5-peso-modal
+#| fig-height: 4.6
+g5$peso_modal
+```
+
+```{=typst}
+]
+```
+
+```{r}
+#| label: s5-distancia-modal
+#| fig-height: 4.6
+g5$distancia_modal
+```
+
+## Modal × mercadoria
+
+```{=typst}
+#block(breakable: false)[
+```
+
+Quanto cada modal leva dentro de cada mercadoria, em linhas, remessas estimadas e toneladas
+estimadas, na população sem SCTG colapsado. Em toneladas, "sem fator" é a soma do peso das linhas
+da amostra, e "com fator" são as toneladas estimadas.
+
+```{r}
+#| label: s5-modal-sctg
+#| fig-height: 6.2
+g5$modal_sctg
+```
+
+```{=typst}
+]
+```
+
+## Origem × destino
+
+```{r}
+#| label: s5-maior-origem
+mo <- res$secao5$maior_origem
+outro <- mo[!mo$mesmo_estado_sem_fator | !mo$mesmo_estado_com_fator, ]
+proprio <- sum(mo$mesmo_estado_com_fator)
+```
+
+Na população geográfica, `r pct1(intra$pct_toneladas, 0)` das toneladas estimadas não saem do estado
+onde a carga nasceu. Para cada estado de destino, a tabela abaixo mostra de onde vem a maior parte
+das toneladas. Com o fator, em **`r proprio` dos `r nrow(mo)` destinos** a maior fonte é o próprio
+estado; a tabela lista os destinos em que, em alguma das duas versões, a maior fonte é outro estado.
+
+```{r}
+#| label: s5-tabela-origem
+tabela(data.frame(
+  Destino = outro$DEST_STATE_rotulo,
+  `Maior origem, sem fator` = outro$origem_rotulo_sem_fator,
+  `% das t, sem fator` = pct1(outro$pct_sem_fator),
+  `Maior origem, com fator` = outro$origem_rotulo_com_fator,
+  `% das t, com fator` = pct1(outro$pct_com_fator),
+  check.names = FALSE
+), align = "llrlr", caption = "Destinos em que a maior origem é outro estado (população geográfica)")
+```
+
+```{r}
+#| label: s5-intraestadual
+#| fig-height: 8.8
+g5$intraestadual
+```
+
+# Próximos passos
+
+As Seções 1 a 5 estão calculadas. As próximas entram neste documento à medida que o grupo decide:
+
+| Seção | Tema | Situação |
+|---|---|---|
+| 6 | Três descobertas interessantes | Em construção |
+| 7 | Problemas identificados (atualiza a lista do Check-in 1) | Em construção |
+| 8 | O que aprendemos sobre a base | Em construção |
+
+Para gerar este PDF de novo, na raiz do projeto: `quarto render reports/checkin2.qmd`. Os números
+vêm do cache em `data/processed/resultados/` e são recalculados sozinhos quando uma regra muda.
+
+```{r}
+#| label: fechar
+fechar_base(base)
+```
