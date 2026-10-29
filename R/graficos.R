@@ -1,42 +1,73 @@
-# Tema, paleta e rotulos dos graficos (ggplot2). Paleta categorica de 8 cores
-# validada para daltonismo na ordem dada (pares vizinhos); a 9a familia,
-# residual, fica em cinza neutro em vez de uma cor gerada.
+# Tema, paleta e rotulos dos graficos (ggplot2), na identidade "Manifesto de
+# carga" (docs/referencias/local/identidade-visual.md). Cinza e o contexto; o
+# marinho e o laranja ficam para o que o titulo conta (Storytelling with Data).
 
-PALETA_MODAL <- c(
-  "Caminhão" = "#2a78d6",
-  "Retirada pelo cliente" = "#eb6834",
-  "Ferrovia" = "#1baf7a",
-  "Hidrovia" = "#eda100",
-  "Aéreo" = "#e87ba4",
-  "Duto" = "#008300",
-  "Encomenda" = "#6250d6",
-  "Multimodal" = "#e34948",
-  "Outros ou desconhecido" = "#898781"
+COR <- c(
+  papel = "#F4F1EA",
+  cartao = "#FBF9F4",
+  kraft = "#E7DCC6",
+  marinho = "#0C2340",
+  laranja = "#E8641E",
+  laranja_texto = "#B7440E",
+  secundario = "#3E5266",
+  rotulo = "#5E6B78",
+  linha = "#D8D0C0"
 )
 
-# Rampa sequencial de um so tom (azul), do claro ao escuro, para mapas de calor.
-RAMPA_SEQUENCIAL <- c("#cde2fb", "#9ec5f4", "#6da7ec", "#3987e5", "#256abf", "#184f95", "#0d366b")
+# Caminhao e encomenda, as duas historias dos graficos, nas cores da identidade;
+# as demais familias em neutros que alternam claro e escuro na ordem de
+# FAMILIAS_MODAL (vizinhas no empilhamento), validados para daltonismo.
+PALETA_MODAL <- c(
+  "Caminhão" = "#0C2340",
+  "Retirada pelo cliente" = "#A9B8C6",
+  "Ferrovia" = "#56677A",
+  "Hidrovia" = "#C9D3DC",
+  "Aéreo" = "#7F8FA0",
+  "Duto" = "#3E5266",
+  "Encomenda" = "#E8641E",
+  "Multimodal" = "#CBB991",
+  "Outros ou desconhecido" = "#8C7B5E"
+)
 
-COR_SERIE <- c("Sem fator" = "#2a78d6", "Com fator" = "#eb6834")
+# Rampa sequencial de um so tom (marinho), do claro ao escuro, para mapas de calor.
+RAMPA_SEQUENCIAL <- c("#E4E9EF", "#C2CDD8", "#9BADBF", "#7189A3", "#4A6584", "#2A4463", "#0C2340")
 
-tema_cfs <- function(base_size = 11) {
-  ggplot2::theme_minimal(base_size = base_size) +
+COR_SERIE <- c("Sem fator" = "#0C2340", "Com fator" = "#E8641E")
+
+FONTES_CFS <- here::here("reports", "fontes")
+
+# Registra a IBM Plex Sans do projeto para os dispositivos ragg; sem isso os
+# graficos usam a fonte padrao do sistema.
+registrar_fontes_cfs <- function(pasta = FONTES_CFS) {
+  arquivo <- function(estilo) file.path(pasta, paste0("IBMPlexSans-", estilo, ".ttf"))
+  systemfonts::register_font("IBM Plex Sans", plain = arquivo("Regular"), bold = arquivo("SemiBold"),
+                             italic = arquivo("Italic"), bolditalic = arquivo("SemiBold"))
+  options(cfs.fonte_graficos = "IBM Plex Sans")
+  invisible("IBM Plex Sans")
+}
+
+tema_cfs <- function(base_size = 9, fonte = getOption("cfs.fonte_graficos", "")) {
+  ggplot2::theme_minimal(base_size = base_size, base_family = fonte) +
     ggplot2::theme(
-      plot.background = ggplot2::element_rect(fill = "#fcfcfb", colour = NA),
-      text = ggplot2::element_text(colour = "#0b0b0b"),
-      plot.title = ggplot2::element_text(face = "bold"),
+      plot.background = ggplot2::element_rect(fill = COR[["papel"]], colour = NA),
+      text = ggplot2::element_text(colour = COR[["marinho"]]),
+      plot.title = ggplot2::element_text(face = "bold", size = ggplot2::rel(1.25), margin = ggplot2::margin(b = 4)),
       plot.title.position = "plot",
       plot.caption.position = "plot",
       # margem direita maior: o ultimo rotulo do eixo x nao corta
-      plot.margin = ggplot2::margin(8, 24, 8, 8),
-      plot.subtitle = ggplot2::element_text(colour = "#52514e"),
-      plot.caption = ggplot2::element_text(colour = "#898781", hjust = 0),
-      axis.text = ggplot2::element_text(colour = "#52514e"),
-      panel.grid.major = ggplot2::element_line(colour = "#e1e0d9", linewidth = 0.3),
+      plot.margin = ggplot2::margin(10, 24, 10, 4),
+      plot.subtitle = ggplot2::element_text(colour = COR[["secundario"]], margin = ggplot2::margin(b = 8)),
+      plot.caption = ggplot2::element_text(colour = COR[["rotulo"]], size = ggplot2::rel(0.8), hjust = 0,
+                                           margin = ggplot2::margin(t = 8)),
+      axis.text = ggplot2::element_text(colour = COR[["secundario"]]),
+      axis.title = ggplot2::element_text(colour = COR[["rotulo"]], size = ggplot2::rel(0.9)),
+      panel.grid.major = ggplot2::element_line(colour = COR[["linha"]], linewidth = 0.25),
       panel.grid.minor = ggplot2::element_blank(),
       legend.position = "top",
       legend.justification = "left",
-      strip.text = ggplot2::element_text(face = "bold", hjust = 0)
+      legend.margin = ggplot2::margin(0, 0, 0, 0),
+      legend.key.size = ggplot2::unit(0.8, "lines"),
+      strip.text = ggplot2::element_text(face = "bold", hjust = 0, colour = COR[["marinho"]])
     )
 }
 

@@ -202,7 +202,7 @@ graficos_secao5 <- function(res) {
     ggplot2::geom_rect(ggplot2::aes(xmin = p25, xmax = p75, ymin = y - 0.14, ymax = y + 0.14, fill = serie),
                        linewidth = 0.4) +
     ggplot2::geom_segment(ggplot2::aes(x = p50, xend = p50, y = y - 0.14, yend = y + 0.14),
-                          colour = "#0b0b0b", linewidth = 0.7) +
+                          colour = COR[["marinho"]], linewidth = 0.7) +
     ggplot2::scale_x_log10(labels = rotulo_num()) +
     ggplot2::scale_y_continuous(breaks = rev(seq_along(FAMILIAS_MODAL)), labels = names(FAMILIAS_MODAL)) +
     ggplot2::scale_colour_manual(values = COR_SERIE, name = NULL) +
@@ -240,7 +240,7 @@ graficos_secao5 <- function(res) {
   titulo <- sprintf("Em toneladas, o caminhão lidera em %s grupos de mercadoria; em remessas, a encomenda lidera em %s",
                     quantos(ton[["Caminhão"]]), quantos(rem[["Encomenda"]]))
   ggplot2::ggplot(dados, ggplot2::aes(pct, rotulo, fill = familia_modal)) +
-    ggplot2::geom_col(width = 0.8, colour = "#fcfcfb", linewidth = 0.15) +
+    ggplot2::geom_col(width = 0.8, colour = COR[["papel"]], linewidth = 0.3) +
     ggplot2::facet_wrap(~medida, nrow = 1) +
     ggplot2::scale_fill_manual(values = PALETA_MODAL, name = NULL, breaks = names(FAMILIAS_MODAL)) +
     ggplot2::scale_x_continuous(labels = rotulo_num(suffix = "%"), breaks = c(25, 50, 75),
@@ -262,9 +262,9 @@ graficos_secao5 <- function(res) {
                                  names(COR_SERIE)),
                   rotulo = stats::reorder(ORIG_STATE_rotulo, pct * (serie == "Com fator")))
   ggplot2::ggplot(dados, ggplot2::aes(pct, rotulo)) +
-    ggplot2::geom_vline(xintercept = total$pct_toneladas, colour = "#898781", linetype = "dashed",
+    ggplot2::geom_vline(xintercept = total$pct_toneladas, colour = COR[["rotulo"]], linetype = "dashed",
                         linewidth = 0.3) +
-    ggplot2::geom_line(ggplot2::aes(group = rotulo), colour = "#c3c2b9", linewidth = 0.5) +
+    ggplot2::geom_line(ggplot2::aes(group = rotulo), colour = COR[["linha"]], linewidth = 0.5) +
     ggplot2::geom_point(ggplot2::aes(colour = serie), size = 1.8) +
     ggplot2::scale_colour_manual(values = COR_SERIE, name = NULL) +
     ggplot2::scale_x_continuous(labels = rotulo_num(suffix = "%"), limits = c(0, 100)) +

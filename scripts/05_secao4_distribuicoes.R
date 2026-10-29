@@ -79,7 +79,7 @@ graficos_secao4 <- function(res) {
     series_fator()
   ggplot2::ggplot(dados) +
     ggplot2::geom_rect(ggplot2::aes(xmin = inicio, xmax = fim, ymin = 0, ymax = pct, fill = serie),
-                       colour = "#fcfcfb", linewidth = 0.2) +
+                       colour = COR[["papel"]], linewidth = 0.2) +
     ggplot2::facet_wrap(~serie, ncol = 1) +
     ggplot2::scale_x_log10(labels = rotulo_num()) +
     ggplot2::scale_fill_manual(values = COR_SERIE, guide = "none") +
@@ -92,7 +92,7 @@ graficos_secao4 <- function(res) {
   dados <- tidyr::pivot_longer(q, c(sem_fator, com_fator), names_to = "serie", values_to = "km") |>
     dplyr::mutate(serie = factor(ifelse(serie == "sem_fator", "Sem fator", "Com fator"), names(COR_SERIE)))
   ggplot2::ggplot(dados, ggplot2::aes(km, 100 * p, colour = serie)) +
-    ggplot2::geom_vline(xintercept = MARCAS_KM, colour = "#898781", linetype = "dashed", linewidth = 0.3) +
+    ggplot2::geom_vline(xintercept = MARCAS_KM, colour = COR[["rotulo"]], linetype = "dashed", linewidth = 0.3) +
     ggplot2::geom_step(linewidth = 0.7, direction = "vh") +
     ggplot2::scale_x_log10(labels = rotulo_num(), breaks = c(1, 10, MARCAS_KM, 5000)) +
     ggplot2::scale_y_continuous(breaks = seq(0, 100, 25)) +
@@ -124,7 +124,7 @@ graficos_secao4 <- function(res) {
     dplyr::mutate(rotulo = stringr::str_trunc(.data[[categoria]], 50),
                   rotulo = stats::reorder(rotulo, pct * (serie == "Sem fator")))
   ggplot2::ggplot(dados, ggplot2::aes(pct, rotulo)) +
-    ggplot2::geom_line(ggplot2::aes(group = rotulo), colour = "#c3c2b9", linewidth = 0.6) +
+    ggplot2::geom_line(ggplot2::aes(group = rotulo), colour = COR[["linha"]], linewidth = 0.6) +
     ggplot2::geom_point(ggplot2::aes(colour = serie), size = 2.4) +
     ggplot2::scale_colour_manual(values = COR_SERIE, name = NULL) +
     ggplot2::scale_x_continuous(labels = rotulo_num(suffix = "%")) +
