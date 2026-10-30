@@ -46,7 +46,6 @@ calcular_secao7 <- function(base, res) {
   mode <- dplyr::filter(res$secao3$frequencias, variavel == "MODE")
   peso <- dplyr::filter(res$secao3$numericas, coluna == "SHIPMT_WGHT")
   caminhao <- dplyr::filter(res$secao5$peso_modal, familia_modal == "Caminhão", p == 0.5)
-  geografica <- dplyr::filter(res$secao2$populacoes, populacao == "geografica")
 
   c(
     lapply(as.list(geral), as.numeric),
@@ -64,8 +63,7 @@ calcular_secao7 <- function(base, res) {
       peso_media = peso$sem_fator[peso$medida == "media"],
       peso_mediana = peso$sem_fator[peso$medida == "mediana"],
       caminhao_mediana_sem_fator = caminhao$sem_fator,
-      caminhao_mediana_com_fator = caminhao$com_fator,
-      linhas_geografica = geografica$linhas
+      caminhao_mediana_com_fator = caminhao$com_fator
     )
   )
 }

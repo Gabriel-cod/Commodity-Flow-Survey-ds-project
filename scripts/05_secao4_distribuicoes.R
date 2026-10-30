@@ -86,8 +86,7 @@ graficos_secao4 <- function(res) {
 }
 
 .grafico_acumulada <- function(q) {
-  dados <- tidyr::pivot_longer(q, c(sem_fator, com_fator), names_to = "serie", values_to = "km") |>
-    dplyr::mutate(serie = factor(ifelse(serie == "sem_fator", "Sem fator", "Com fator"), names(COR_SERIE)))
+  dados <- series_fator(q, "sem_fator", "com_fator", "km")
   ggplot2::ggplot(dados, ggplot2::aes(km, 100 * p, colour = serie)) +
     ggplot2::geom_vline(xintercept = MARCAS_KM, colour = COR[["rotulo"]], linetype = "dashed", linewidth = 0.3) +
     ggplot2::geom_step(linewidth = 0.7, direction = "vh") +

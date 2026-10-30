@@ -80,10 +80,10 @@ rotulos_cfs <- function(titulo, subtitulo = NULL, rodape = NULL, ..., largura = 
                 caption = quebrar(rodape, round(largura * 1.35)), ...)
 }
 
-# Pares (sem fator, com fator) em formato longo, com a legenda de COR_SERIE.
-series_fator <- function(df) {
-  tidyr::pivot_longer(df, c(pct_linhas, pct_remessas), names_to = "serie", values_to = "pct") |>
-    dplyr::mutate(serie = factor(ifelse(serie == "pct_linhas", "Sem fator", "Com fator"), names(COR_SERIE)))
+# Par de colunas (sem fator, com fator) em formato longo, com a legenda de COR_SERIE.
+series_fator <- function(df, sem = "pct_linhas", com = "pct_remessas", valor = "pct") {
+  tidyr::pivot_longer(df, dplyr::all_of(c(sem, com)), names_to = "serie", values_to = valor) |>
+    dplyr::mutate(serie = factor(ifelse(serie == sem, "Sem fator", "Com fator"), names(COR_SERIE)))
 }
 
 LEGENDA_SERIES <- "Sem fator: % das linhas da amostra. Com fator: % das remessas estimadas (soma do WGT_FACTOR)."

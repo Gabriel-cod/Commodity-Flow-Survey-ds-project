@@ -1,14 +1,14 @@
 # 07_secao6_descobertas.R -------------------------------------------------
 # Secao 6 do Check-in 2: as tres descobertas escolhidas pelo Gabriel em
 # 29/10/2026 (FSD 31.7). So define objetos. Reaproveita as Secoes 4 e 5 e
-# soma, numa consulta so, o peso por familia de modal e faixa de distancia.
+# soma, numa consulta so, a carga por familia de modal e faixa de distancia.
 
 MEDIDAS_CARGA <- c(remessas = "Remessas", toneladas = "Toneladas")
 LEGENDA_CARGA <- paste("Sem fator: % das linhas e % do peso somado da amostra.",
                        "Com fator: % das remessas estimadas e % das toneladas estimadas (peso × WGT_FACTOR).")
 
 calcular_secao6 <- function(base, res) {
-  carga <- .carga_modal_faixa(base)
+  carga <- somar_carga(com_faixa_distancia(com_familia_modal(base)), c("familia_modal", "faixa"))
   list(
     fator_retrato = .fator_retrato(res),
     modal_carga = .participacoes(carga, "familia_modal") |>
@@ -35,16 +35,6 @@ graficos_secao6 <- function(res) {
       "%s das toneladas estimadas viajam até 100 km, contra %s das remessas",
       perto("pct_toneladas"), perto("pct_remessas")))
   )
-}
-
-.carga_modal_faixa <- function(base) {
-  com_faixa_distancia(com_familia_modal(base)) |>
-    dplyr::group_by(familia_modal, faixa) |>
-    dplyr::summarise(linhas = dplyr::n(), remessas = sum(WGT_FACTOR, na.rm = TRUE),
-                     toneladas_amostra = sum(peso_t, na.rm = TRUE),
-                     toneladas = sum(peso_t * WGT_FACTOR, na.rm = TRUE), .groups = "drop") |>
-    dplyr::collect() |>
-    dplyr::mutate(linhas = as.numeric(linhas))
 }
 
 .participacoes <- function(carga, coluna) {
@@ -92,10 +82,8 @@ graficos_secao6 <- function(res) {
 
 # Halteres: o ponto marinho e a mediana da amostra, o laranja a das remessas estimadas.
 .grafico_medianas <- function(fr, titulo) {
-  dados <- fr |>
-    tidyr::pivot_longer(c(mediana_sem_fator, mediana_com_fator), names_to = "serie", values_to = "v") |>
-    dplyr::mutate(serie = factor(ifelse(serie == "mediana_sem_fator", "Sem fator", "Com fator"), names(COR_SERIE)),
-                  familia_modal = forcats::fct_rev(familia_modal))
+  dados <- series_fator(fr, "mediana_sem_fator", "mediana_com_fator", "v") |>
+    dplyr::mutate(familia_modal = forcats::fct_rev(familia_modal))
   ggplot2::ggplot(dados, ggplot2::aes(v, familia_modal)) +
     ggplot2::geom_line(ggplot2::aes(group = familia_modal), colour = COR[["linha"]], linewidth = 0.8) +
     ggplot2::geom_point(ggplot2::aes(colour = serie), size = 2.2) +

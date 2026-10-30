@@ -110,6 +110,17 @@ frequencias <- function(dados, colunas, populacao = "completa", dentro_de = NULL
   tibble::add_column(r, populacao = populacao, .before = 1)
 }
 
+# Toneladas sem fator: soma do peso da amostra; com fator: soma de peso x fator.
+somar_carga <- function(dados, grupos) {
+  dados |>
+    dplyr::group_by(dplyr::across(dplyr::all_of(grupos))) |>
+    dplyr::summarise(linhas = dplyr::n(), remessas = sum(WGT_FACTOR, na.rm = TRUE),
+                     toneladas_amostra = sum(peso_t, na.rm = TRUE),
+                     toneladas = sum(peso_t * WGT_FACTOR, na.rm = TRUE), .groups = "drop") |>
+    dplyr::collect() |>
+    dplyr::mutate(linhas = as.numeric(linhas))
+}
+
 .sql_populacao <- function(dados, populacao) {
   dbplyr::sql_render(filtrar_populacao(dados, populacao))
 }

@@ -12,14 +12,15 @@ MEDIDAS_MODAL_SCTG <- c(linhas = "Linhas (sem fator)", remessas = "Remessas esti
 
 calcular_secao5 <- function(base) {
   modal <- com_familia_modal(base)
+  pares <- somar_carga(filtrar_populacao(base, "geografica"), c("ORIG_STATE", "DEST_STATE"))
   list(
     peso_distancia = .mapa_calor(base),
     correlacao = .correlacao_logs(base),
     peso_modal = .caixas(modal, "SHIPMT_WGHT"),
     distancia_modal = .caixas(modal, "dist_km"),
     modal_sctg = .modal_sctg(modal),
-    intraestadual = .intraestadual(base),
-    maior_origem = .maior_origem(base)
+    intraestadual = .intraestadual(pares),
+    maior_origem = .maior_origem(pares)
   )
 }
 
@@ -97,20 +98,8 @@ graficos_secao5 <- function(res) {
                   familia_modal = factor(familia_modal, names(FAMILIAS_MODAL)))
 }
 
-# Toneladas por par de estados na populacao geografica. Sem fator: soma do peso
-# da amostra; com fator: toneladas estimadas (soma de peso x fator).
-.pares_estados <- function(base) {
-  filtrar_populacao(base, "geografica") |>
-    dplyr::group_by(ORIG_STATE, DEST_STATE) |>
-    dplyr::summarise(linhas = dplyr::n(), remessas = sum(WGT_FACTOR, na.rm = TRUE),
-                     toneladas_amostra = sum(peso_t, na.rm = TRUE),
-                     toneladas = sum(peso_t * WGT_FACTOR, na.rm = TRUE), .groups = "drop") |>
-    dplyr::collect() |>
-    dplyr::mutate(linhas = as.numeric(linhas))
-}
-
-.intraestadual <- function(base) {
-  pares <- .pares_estados(base)
+# `pares`: carga por par de estados na populacao geografica (somar_carga).
+.intraestadual <- function(pares) {
   resumir <- function(df) {
     dplyr::summarise(df,
       linhas_total = sum(linhas),
@@ -128,8 +117,7 @@ graficos_secao5 <- function(res) {
 }
 
 # Para cada destino, a origem com mais toneladas, sem e com fator.
-.maior_origem <- function(base) {
-  pares <- .pares_estados(base)
+.maior_origem <- function(pares) {
   maior <- function(coluna, sufixo) {
     pares |>
       dplyr::group_by(DEST_STATE) |>
@@ -180,10 +168,8 @@ graficos_secao5 <- function(res) {
 # Caixas montadas a mao: caixa do Q1 ao Q3, traco na mediana e haste do P10 ao
 # P90. y numerico para pôr as duas series lado a lado.
 .grafico_caixas <- function(q, eixo_x, verbo, unidade) {
-  largas <- q |>
-    tidyr::pivot_longer(c(sem_fator, com_fator), names_to = "serie", values_to = "v") |>
-    dplyr::mutate(serie = factor(ifelse(serie == "sem_fator", "Sem fator", "Com fator"), names(COR_SERIE)),
-                  p = paste0("p", round(100 * p))) |>
+  largas <- series_fator(q, "sem_fator", "com_fator", "v") |>
+    dplyr::mutate(p = paste0("p", round(100 * p))) |>
     tidyr::pivot_wider(id_cols = c(familia_modal, serie), names_from = p, values_from = v) |>
     dplyr::mutate(y = length(FAMILIAS_MODAL) + 1 - as.integer(familia_modal) +
                     ifelse(serie == "Sem fator", 0.18, -0.18))
@@ -257,10 +243,8 @@ graficos_secao5 <- function(res) {
 .grafico_intraestadual <- function(ie) {
   total <- dplyr::filter(ie, ORIG_STATE == "Total")
   dados <- dplyr::filter(ie, ORIG_STATE != "Total") |>
-    tidyr::pivot_longer(c(pct_toneladas_amostra, pct_toneladas), names_to = "serie", values_to = "pct") |>
-    dplyr::mutate(serie = factor(ifelse(serie == "pct_toneladas_amostra", "Sem fator", "Com fator"),
-                                 names(COR_SERIE)),
-                  rotulo = stats::reorder(ORIG_STATE_rotulo, pct * (serie == "Com fator")))
+    series_fator("pct_toneladas_amostra", "pct_toneladas") |>
+    dplyr::mutate(rotulo = stats::reorder(ORIG_STATE_rotulo, pct * (serie == "Com fator")))
   ggplot2::ggplot(dados, ggplot2::aes(pct, rotulo)) +
     ggplot2::geom_vline(xintercept = total$pct_toneladas, colour = COR[["rotulo"]], linetype = "dashed",
                         linewidth = 0.3) +
