@@ -11,7 +11,7 @@ cada check-in e o motivo de cada decisão tomada.**
 | Entrega | Prazo | Situação |
 |---|---|---|
 | Check-in 1: conhecendo a base | 30/09/2026 | Entregue |
-| Check-in 2: explorando e descrevendo a base | 26/10/2026 | Em andamento. As 8 seções estão no PDF, que espera a revisão do grupo |
+| Check-in 2: explorando e descrevendo a base | 26/10/2026 | Pronto: as 8 seções estão no PDF `reports/checkin2.pdf` |
 
 ## Por onde começar
 
@@ -255,8 +255,8 @@ as perguntas que guiam o trabalho e uma lista de problemas e dúvidas.**
 
 ### Check-in 2 — Explorando e descrevendo a base (prazo 26/10/2026)
 
-**Em andamento. O professor pede oito seções. A primeira, sobre preparação e qualidade dos dados,
-está pronta. As outras sete usam a mesma base tratada.**
+**Pronto. O professor pede oito seções, e as oito estão num PDF só, calculadas sobre a mesma base
+tratada.**
 
 A pergunta central do check-in é *"o que conseguimos aprender sobre os dados antes de
 modelá-los?"*. Ainda não entram modelos: nada de regressão, classificação, *clustering* ou testes de
@@ -265,13 +265,13 @@ hipóteses.
 | Seção | Tema | Situação |
 |---|---|---|
 | 1 | Preparação e qualidade dos dados | **Pronta**: `reports/secao1_qualidade.qmd` (e no `reports/checkin2.qmd`) |
-| 2 | Dimensão da base após a preparação | **Calculada**: `scripts/03_secao2_dimensao.R` |
-| 3 | Análise descritiva de 8 a 10 variáveis, incluindo as 5 do Check-in 1 | **Calculada**: `scripts/04_secao3_descritiva.R` |
-| 4 | Visualização das distribuições | **Calculada**: `scripts/05_secao4_distribuicoes.R` |
-| 5 | Relações entre variáveis (pelo menos quatro) | **Calculada**: `scripts/06_secao5_relacoes.R` |
-| 6 | Três descobertas interessantes | A fazer |
-| 7 | Problemas identificados (atualiza a lista do Check-in 1) | A fazer |
-| 8 | O que aprendemos sobre a base | A fazer |
+| 2 | Dimensão da base após a preparação | **Pronta**: `scripts/03_secao2_dimensao.R` |
+| 3 | Análise descritiva de 8 a 10 variáveis, incluindo as 5 do Check-in 1 | **Pronta**: `scripts/04_secao3_descritiva.R` |
+| 4 | Visualização das distribuições | **Pronta**: `scripts/05_secao4_distribuicoes.R` |
+| 5 | Relações entre variáveis (pelo menos quatro) | **Pronta**: `scripts/06_secao5_relacoes.R` |
+| 6 | Três descobertas interessantes | **Pronta**: `scripts/07_secao6_descobertas.R` |
+| 7 | Problemas identificados (atualiza a lista do Check-in 1) | **Pronta**: `scripts/08_secao7_problemas.R` |
+| 8 | O que aprendemos sobre a base | **Pronta**: `scripts/09_secao8_sintese.R` |
 
 #### Seção 1 — Preparação e qualidade dos dados ✓
 
@@ -797,10 +797,10 @@ e cinco lições sobre como ler a base.**
 - **O que mudou:** nada fora do script novo e do relatório.
 - **Como continuar:** `obter_resultados(base, 8)$secao8` traz os números da síntese.
 
-#### O relatório do Check-in 2 em PDF (em andamento)
+#### O relatório do Check-in 2 em PDF ✓
 
 **As oito seções já estão num PDF só, de 26 páginas, com todos os gráficos e na identidade visual
-do grupo. Falta a revisão do texto pelo grupo.**
+do grupo. O texto foi revisado e aprovado.**
 
 - **O que foi feito:** o `reports/checkin2.qmd` junta as oito seções num PDF:
   - **capa e "Em resumo":** seis números grandes, como ler "sem fator" e "com fator", e o sumário;
