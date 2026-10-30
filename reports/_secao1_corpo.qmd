@@ -310,7 +310,7 @@ encomenda <- q("
   SELECT encomenda, sum(c) AS linhas, sum(f) AS remessas,
          (min(v) FILTER (WHERE acum >= (n + 1) // 2) + min(v) FILTER (WHERE acum >= n // 2 + 1)) / 2
            AS mediana
-  FROM o GROUP BY 1")
+  FROM o GROUP BY 1 ORDER BY 1")
 enc <- encomenda[encomenda$encomenda, ]
 ```
 
