@@ -39,3 +39,11 @@ com_familia_modal <- function(dados) {
   }, character(1))
   dplyr::mutate(dados, familia_modal = dplyr::sql(paste("CASE", paste(casos, collapse = " "), "END")))
 }
+
+FAIXAS_DISTANCIA <- c("Até 100 km", "De 100 a 500 km", "De 500 a 1.000 km", "Mais de 1.000 km")
+
+com_faixa_distancia <- function(dados) {
+  dplyr::mutate(dados, faixa = dplyr::case_when(
+    dist_km <= 100 ~ !!FAIXAS_DISTANCIA[1], dist_km <= 500 ~ !!FAIXAS_DISTANCIA[2],
+    dist_km <= 1000 ~ !!FAIXAS_DISTANCIA[3], TRUE ~ !!FAIXAS_DISTANCIA[4]))
+}

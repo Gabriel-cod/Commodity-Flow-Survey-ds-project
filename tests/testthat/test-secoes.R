@@ -125,6 +125,65 @@ test_that("secao 5: relacoes e graficos (T-S5)", {
   for (nome in names(g)) expect_no_error(ggplot2::ggplot_build(g[[nome]]), message = nome)
 })
 
+test_that("secoes 6, 7 e 8: descobertas, problemas e sintese (T-S6, T-S7, T-S8)", {
+  source(here::here("scripts", "07_secao6_descobertas.R"), local = TRUE)
+  source(here::here("scripts", "08_secao7_problemas.R"), local = TRUE)
+  r <- res_secoes(6:8)
+  df_secoes <- r$df
+  f <- df_secoes$WGT_FACTOR
+  for (s in r[c("secao6", "secao7", "secao8")]) esperar_populacao(s)
+
+  # T-S6: participacoes sem e com fator, e as medianas vindas da Secao 5
+  s6 <- r$secao6
+  for (tab in s6[c("modal_carga", "distancia_carga")]) {
+    expect_equal(sum(tab$linhas), 20)
+    for (col in c("pct_linhas", "pct_remessas", "pct_toneladas_amostra", "pct_toneladas")) {
+      expect_equal(sum(tab[[col]]), 100, info = col)
+    }
+  }
+  enc <- df_secoes$MODE == "21"
+  mc <- dplyr::filter(s6$modal_carga, familia_modal == "Encomenda")
+  expect_equal(mc$pct_remessas, 100 * sum(f[enc]) / sum(f))
+  expect_equal(mc$toneladas, sum((df_secoes$peso_t * f)[enc]))
+  expect_equal(mc$toneladas_amostra, sum(df_secoes$peso_t[enc]))
+  perto <- dplyr::filter(s6$distancia_carga, faixa == FAIXAS_DISTANCIA[1])
+  expect_equal(perto$linhas, sum(df_secoes$dist_km <= 100))
+  caminhao <- df_secoes$MODE %in% FAMILIAS_MODAL[["Caminhão"]]
+  expect_equal(s6$fator_retrato$mediana_sem_fator[s6$fator_retrato$familia_modal == "Caminhão"],
+               median(df_secoes$SHIPMT_WGHT[caminhao]))
+  geo <- df_secoes[!df_secoes$fl_exportacao & !df_secoes$fl_origem_suprimida, ]
+  t_geo <- geo$peso_t * geo$WGT_FACTOR
+  expect_equal(s6$perto_de_casa$com_fator[1], 100 * sum(t_geo[geo$ORIG_STATE == geo$DEST_STATE]) / sum(t_geo))
+  g <- graficos_secao6(s6)
+  expect_length(g, 3)
+  for (nome in names(g)) expect_no_error(ggplot2::ggplot_build(g[[nome]]), message = nome)
+  expect_match(g$distancia_carga$labels$title, "^[0-9]+% das toneladas")
+
+  # T-S7: tabela aprovada, com status e tipo validos e evidencias da fixture
+  s7 <- r$secao7
+  expect_equal(nrow(s7$problemas), 14)
+  expect_true(all(s7$problemas$status %in% names(STATUS_PROBLEMA)))
+  expect_equal(as.vector(table(s7$problemas$tipo)[TIPOS_PROBLEMA]), c(7, 7))
+  ev <- s7$evidencias
+  for (fl in FLAGS) expect_equal(ev[[fl]], sum(df_secoes[[fl]]), info = fl)
+  expect_equal(ev$valor_acima_teto, sum(df_secoes$SHIPMT_VALUE > VALOR_TETO))
+  expect_equal(ev$linhas_duplicadas,
+               20 - nrow(dplyr::distinct(df_secoes[setdiff(names(TIPOS_CFS), "SHIPMT_ID")])))
+  expect_true(ev$coluna_trocada)
+  expect_equal(ev$linhas_mode_30, sum(df_secoes$MODE == "30"))
+
+  # T-S8: totais sem e com fator e o modal dominante
+  s8 <- r$secao8
+  num <- setNames(split(s8$numeros, seq_len(3)), s8$numeros$medida)
+  expect_equal(num$Remessas$sem_fator, 20)
+  expect_equal(num$Remessas$com_fator, sum(f))
+  expect_equal(num$`Valor (US$)`$com_fator, sum(df_secoes$SHIPMT_VALUE * f))
+  expect_equal(num$Toneladas$sem_fator, sum(df_secoes$peso_t))
+  dom <- setNames(s8$modal_dominante$familia_modal, s8$modal_dominante$medida)
+  expect_equal(dom[["Linhas da amostra"]], "Caminhão")
+  expect_equal(dom[["Remessas estimadas"]], "Encomenda")
+})
+
 test_that("executar.R le as secoes sem avaliar codigo (T-S9)", {
   expect_equal(ler_secoes("2:5", prontas = 2:5), 2:5)
   expect_equal(ler_secoes("4, 2,3", prontas = 2:5), 2:4)
@@ -132,5 +191,5 @@ test_that("executar.R le as secoes sem avaliar codigo (T-S9)", {
   expect_equal(ler_secoes(character(), prontas = 2:5), 2:5)
   expect_error(ler_secoes("system('ls')", prontas = 2:5), "invalidas")
   expect_error(ler_secoes("2:6", prontas = 2:5), "sem script pronto: 6")
-  expect_true(all(2:5 %in% secoes_prontas()))
+  expect_true(all(2:8 %in% secoes_prontas()))
 })

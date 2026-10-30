@@ -19,10 +19,7 @@ calcular_secao4 <- function(base) {
       dplyr::rename(codigo = dplyr::all_of(coluna), rotulo = dplyr::all_of(paste0(coluna, "_rotulo"))) |>
       dplyr::slice_head(n = N_AREAS)
   }
-  faixas <- base |>
-    dplyr::mutate(faixa = dplyr::case_when(
-      dist_km <= 100 ~ "Até 100 km", dist_km <= 500 ~ "De 100 a 500 km",
-      dist_km <= 1000 ~ "De 500 a 1.000 km", TRUE ~ "Mais de 1.000 km")) |>
+  faixas <- com_faixa_distancia(base) |>
     frequencias("faixa") |>
     dplyr::arrange(faixa) |>
     dplyr::mutate(pct_linhas_acum = cumsum(pct_linhas), pct_remessas_acum = cumsum(pct_remessas))

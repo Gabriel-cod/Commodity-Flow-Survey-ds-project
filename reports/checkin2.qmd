@@ -4,6 +4,7 @@ subtitle: "Check-in 2 — o que aprendemos sobre a base antes de modelá-la"
 author:
   - name: "Gabriel"
   - name: "Gustavo"
+  - name: "Mirella"
 date: today
 date-format: "DD/MM/YYYY"
 lang: pt
@@ -34,12 +35,15 @@ source(here::here("scripts", "10_resultados.R"))
 # Os scripts das secoes so definem objetos; daqui vem graficos_secaoN().
 source(here::here("scripts", "05_secao4_distribuicoes.R"))
 source(here::here("scripts", "06_secao5_relacoes.R"))
+source(here::here("scripts", "07_secao6_descobertas.R"))
+source(here::here("scripts", "08_secao7_problemas.R"))
 registrar_fontes_cfs()
 
 base <- suppressMessages(obter_base_tratada(pipeline = FALSE))
-res <- obter_resultados(base, 2:5)
+res <- obter_resultados(base, 2:8)
 g4 <- graficos_secao4(res$secao4)
 g5 <- graficos_secao5(res$secao5)
+g6 <- graficos_secao6(res$secao6)
 
 pct1 <- function(x, d = 1) paste0(n_fmt(x, d), "%")
 mediana <- function(coluna, serie) {
@@ -59,10 +63,10 @@ numero <- function(valor, rotulo, destaque = FALSE) {
 
 # Em resumo
 
-Este documento reúne as Seções 1 a 5 do Check-in 2, calculadas sobre a base inteira, sem amostragem.
+Este documento reúne as oito seções do Check-in 2, calculadas sobre a base inteira, sem amostragem.
 A pergunta do check-in é *"o que conseguimos aprender sobre os dados antes de modelá-los?"*: ainda
-não entram modelos, testes de hipóteses nem *clustering*. As Seções 6 a 8 entram à medida que o
-grupo toma as decisões.
+não entram modelos, testes de hipóteses nem *clustering*. As Seções 1 a 5 descrevem a base; a 6 traz
+três descobertas, a 7 atualiza os problemas do Check-in 1 e a 8 resume o que aprendemos.
 
 ```{r}
 #| label: resumo-numeros
@@ -474,15 +478,182 @@ tabela(data.frame(
 g5$intraestadual
 ```
 
-# Próximos passos
+# Seção 6 — Três descobertas
 
-As Seções 1 a 5 estão calculadas. As próximas entram neste documento à medida que o grupo decide:
+```{r}
+#| label: s6-dados
+d6 <- res$secao6
+fr <- d6$fator_retrato
+mc <- d6$modal_carga
+dc <- d6$distancia_carga
+pc <- d6$perto_de_casa
+v6 <- function(df, coluna, valor, medida) df[[medida]][df[[coluna]] == valor]
+caminhao <- fr[fr$familia_modal == "Caminhão", ]
+```
 
-| Seção | Tema | Situação |
-|---|---|---|
-| 6 | Três descobertas interessantes | Em construção |
-| 7 | Problemas identificados (atualiza a lista do Check-in 1) | Em construção |
-| 8 | O que aprendemos sobre a base | Em construção |
+Cada descoberta vem em três partes: a frase, a evidência e por que ela importa para o projeto.
+
+## 1. O fator muda o retrato
+
+```{=typst}
+#block(breakable: false)[
+```
+
+**A frase.** Sem o fator, a remessa típica do caminhão pesa `r n_fmt(caminhao$mediana_sem_fator)` lb;
+com o fator, `r n_fmt(caminhao$mediana_com_fator)` lb.
+
+**A evidência.** A encomenda é `r pct1(v6(fr, "familia_modal", "Encomenda", "pct_linhas"))` das linhas
+da amostra, mas `r pct1(v6(fr, "familia_modal", "Encomenda", "pct_remessas"))` das remessas estimadas.
+O Census sorteou proporcionalmente mais remessas pesadas do que leves, e o fator desfaz esse
+desequilíbrio: cada remessa leve vale muitas remessas reais. O gráfico mostra o peso mediano de cada
+família de modal nas duas versões.
+
+```{r}
+#| label: s6-fator-retrato
+#| fig-height: 4.4
+g6$fator_retrato
+```
+
+```{=typst}
+]
+```
+
+**Por que importa.** Qualquer número calculado sem o fator descreve a amostra, não o transporte de
+carga dos EUA. Daqui em diante, toda conclusão sobre "a remessa típica" precisa dizer em qual das
+duas versões foi calculada.
+
+## 2. Encomenda × caminhão
+
+```{=typst}
+#block(breakable: false)[
+```
+
+**A frase.** A encomenda é a maioria das remessas e quase nada do peso; o caminhão é o contrário.
+
+**A evidência.** A encomenda responde por `r pct1(v6(mc, "familia_modal", "Encomenda", "pct_remessas"))`
+das remessas estimadas e só `r pct1(v6(mc, "familia_modal", "Encomenda", "pct_toneladas"))` das
+toneladas estimadas. O caminhão fica com `r pct1(v6(mc, "familia_modal", "Caminhão", "pct_remessas"))`
+das remessas e `r pct1(v6(mc, "familia_modal", "Caminhão", "pct_toneladas"))` das toneladas.
+
+```{r}
+#| label: s6-modal-carga
+#| fig-height: 4.4
+g6$modal_carga
+```
+
+```{=typst}
+]
+```
+
+**Por que importa.** A pergunta "qual modal importa mais?" tem duas respostas, conforme a medida:
+contando remessas, a encomenda; somando peso, o caminhão. Toda análise por modal precisa escolher a
+medida antes de concluir.
+
+## 3. A carga fica perto de casa
+
+```{=typst}
+#block(breakable: false)[
+```
+
+**A frase.** A maior parte do peso transportado não sai do estado de origem.
+
+**A evidência.** Na população geográfica, `r pct1(pc$com_fator[1])` das toneladas estimadas ficam no
+estado de origem, e em `r pc$com_fator[2]` dos `r pc$de[2]` destinos a maior origem é o próprio
+estado (Seção 5). Pela distância, `r pct1(v6(dc, "faixa", FAIXAS_DISTANCIA[1], "pct_toneladas"))`
+das toneladas estimadas viajam até 100 km, contra `r pct1(v6(dc, "faixa", FAIXAS_DISTANCIA[1], "pct_remessas"))`
+das remessas estimadas.
+
+```{r}
+#| label: s6-distancia-carga
+#| fig-height: 3.8
+g6$distancia_carga
+```
+
+```{=typst}
+]
+```
+
+**Por que importa.** As remessas viajam distâncias variadas, mas o peso se concentra no trecho curto.
+Uma análise de origem e destino em toneladas será dominada pelo próprio estado, e as rotas entre
+estados precisam ser lidas à parte.
+
+# Seção 7 — Problemas identificados
+
+```{r}
+#| label: s7-dados
+d7 <- res$secao7
+pr <- d7$problemas
+tabela_problemas <- function(tipo, titulo) {
+  x <- pr[pr$tipo == tipo, ]
+  t <- tabela(data.frame(Problema = x$problema, Status = x$status, `Evidência` = x$evidencia,
+                         check.names = FALSE), align = "lll", caption = titulo)
+  # Na tabela pipe, a largura de cada coluna segue o numero de tracos do separador;
+  # sem isso o status fica estreito e invade a evidencia.
+  sep <- grep("^\\|[-:| ]+\\|$", t)
+  t[sep] <- paste0("|:", strrep("-", 32), "|:", strrep("-", 15), "|:", strrep("-", 53), "|")
+  t
+}
+```
+
+A lista do Check-in 1, refeita sobre a base inteira. Cada item recebe um status:
+
+```{r}
+#| label: s7-status
+#| results: asis
+cat(sprintf("- **%s:** %s", d7$status$status, d7$status$significado), sep = "\n")
+```
+
+Os **problemas dos dados** são coisas estranhas no próprio arquivo. As **limitações da base** são
+casos em que o arquivo está certo, mas não responde a certas perguntas.
+
+```{r}
+#| label: s7-problemas
+tabela_problemas(TIPOS_PROBLEMA[1], "Problemas dos dados (base completa)")
+```
+
+```{r}
+#| label: s7-limitacoes
+tabela_problemas(TIPOS_PROBLEMA[2], "Limitações da base (base completa)")
+```
+
+Nenhum dos problemas levou a remover linhas: cada um virou uma marcação (Seção 1) e é excluído só na
+análise em que atrapalha.
+
+# Seção 8 — O que aprendemos sobre a base
+
+```{r}
+#| label: s8-dados
+n8 <- res$secao8$numeros
+n8v <- function(medida, serie) n8[[serie]][n8$medida == medida]
+dom <- res$secao8$modal_dominante
+domv <- function(medida) dom[dom$medida == medida, ]
+```
+
+```{r}
+#| label: s8-numeros
+typst(
+  "#grid(columns: (1fr, 1fr, 1fr), column-gutter: 8pt, row-gutter: 8pt,\n",
+  numero(paste(n_fmt(n8v("Remessas", "com_fator") / 1e9, 1), "bi"), "remessas estimadas, a partir de 37,6 milhões de linhas"), ",\n",
+  numero(paste("US\\$", n_fmt(n8v("Valor (US$)", "com_fator") / 1e12, 1), "tri"), "de valor estimado das remessas"), ",\n",
+  numero(paste(n_fmt(n8v("Toneladas", "com_fator") / 1e9, 1), "bi t"), "de carga estimada", TRUE), ",\n",
+  ")"
+)
+```
+
+1. **A base está pronta para usar, inteira.** São `r n_fmt(n8v("Remessas", "sem_fator"))` linhas,
+   sem nulos e sem nenhuma linha removida. Cada problema virou uma marcação, e a checagem oficial de
+   Maryland bate com o guia. A base inteira roda numa máquina de 4 GB, sem precisar de amostra.
+2. **A amostra não é o retrato dos EUA.** Somando o fator, as linhas viram
+   `r n_fmt(n8v("Remessas", "com_fator") / 1e9, 1)` bilhões de remessas, e a remessa típica fica muito
+   mais leve. Toda tabela deste documento traz as duas versões lado a lado.
+3. **A medida decide a resposta.** Em linhas da amostra domina o
+   `r tolower(domv("Linhas da amostra")$familia_modal)` (`r pct1(domv("Linhas da amostra")$pct)`); em
+   remessas estimadas, a `r tolower(domv("Remessas estimadas")$familia_modal)`
+   (`r pct1(domv("Remessas estimadas")$pct)`); em toneladas estimadas, de novo o
+   `r tolower(domv("Toneladas estimadas")$familia_modal)` (`r pct1(domv("Toneladas estimadas")$pct)`).
+4. **Os números são muito assimétricos.** Peso, valor e distância vão de 1 a centenas de milhões, e a
+   média fica muito acima da mediana. Por isso os gráficos usam escala log e o texto usa medianas.
+5. **A carga é local.** A maior parte das toneladas fica no estado de origem e viaja até 100 km.
 
 Para gerar este PDF de novo, na raiz do projeto: `quarto render reports/checkin2.qmd`. Os números
 vêm do cache em `data/processed/resultados/` e são recalculados sozinhos quando uma regra muda.

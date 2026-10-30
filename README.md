@@ -11,7 +11,7 @@ cada check-in e o motivo de cada decisão tomada.**
 | Entrega | Prazo | Situação |
 |---|---|---|
 | Check-in 1: conhecendo a base | 30/09/2026 | Entregue |
-| Check-in 2: explorando e descrevendo a base | 26/10/2026 | Em andamento. A Seção 1 está pronta e as Seções 2 a 8 vêm a seguir |
+| Check-in 2: explorando e descrevendo a base | 26/10/2026 | Em andamento. As 8 seções estão no PDF, que espera a revisão do grupo |
 
 ## Por onde começar
 
@@ -732,12 +732,77 @@ nasceu, e em 48 dos 51 estados a maior fonte de carga é o próprio estado.**
   foram para `R/graficos.R`, para as Seções 4 e 5 usarem o mesmo texto.
 - **Como continuar:** `graficos_secao5(obter_resultados(base, 5)$secao5)` devolve os cinco gráficos.
 
+#### Seção 6 — Três descobertas ✓
+
+**Três descobertas escolhidas pelo Gabriel: o fator muda o retrato, encomenda é quantidade e
+caminhão é peso, e a carga pesada fica perto de casa.**
+
+- **O que foi feito:** o script `scripts/07_secao6_descobertas.R` junta os números das Seções 4 e 5 e
+  soma o peso por família de modal e faixa de distância, numa consulta só. Cada descoberta tem a
+  frase, a evidência (um gráfico) e por que importa.
+- **Decisões e por quê:**
+  - **quem escolheu as três foi o Gabriel**, entre as candidatas que os números sustentavam;
+  - **toda comparação traz as duas versões**, sem e com fator, porque a descoberta 1 é justamente
+    que elas contam histórias diferentes;
+  - as quatro faixas de distância passaram para `R/populacoes.R`, para as Seções 4 e 6 usarem a
+    mesma definição.
+- **Os números:**
+  1. **o fator muda o retrato:** a remessa mediana do caminhão pesa 199 lb na amostra e 6 lb nas
+     remessas estimadas; a encomenda é 44,2% das linhas e 58,8% das remessas;
+  2. **encomenda × caminhão:** a encomenda é 58,8% das remessas e 0,5% das toneladas; o caminhão,
+     37,6% das remessas e 56,8% das toneladas;
+  3. **a carga fica perto de casa:** 68,3% das toneladas ficam no estado de origem, e 59,8% das
+     toneladas viajam até 100 km, contra 26,6% das remessas.
+- **O que mudou:** os rótulos de percentual muito pequenos aparecem como "<0,1%", e não "0,0%", que
+  parecia zero.
+- **Como continuar:** `graficos_secao6(obter_resultados(base, 6)$secao6)` devolve os três gráficos.
+
+#### Seção 7 — Problemas identificados ✓
+
+**A lista de problemas do Check-in 1, refeita com a base inteira: 3 afirmações corrigidas, 7
+confirmadas com número e 4 problemas novos.**
+
+- **O que foi feito:** o script `scripts/08_secao7_problemas.R` recalcula cada evidência (teto de
+  valor, linhas idênticas, fator, dicionário, checagem de Maryland) e monta duas tabelas:
+  **problemas dos dados** (algo estranho no próprio arquivo) e **limitações da base** (o arquivo
+  está certo, mas não responde a certas perguntas).
+- **Decisões e por quê:**
+  - **três status, aprovados pelo Gabriel:** CORRIGIDO (o Check-in 1 afirmou algo que a base
+    desmente), CONFIRMADO (o problema existe e agora tem número) e NOVO (apareceu só agora);
+  - a seção calcula as próprias evidências, em vez de copiar do relatório da Seção 1, para os
+    números saírem do mesmo cache das outras seções.
+- **Alguns números:**
+  - o teto de US$ 30 milhões não é rígido: 10 remessas passam dele (até US$ 42,4 milhões);
+  - 623 mil linhas são idênticas a outra, exceto o número de identificação, e ficam na base;
+  - o colapsamento de origem atinge só 4 mil linhas, e não as ~100 mil do Check-in 1.
+- **O que mudou:** a seção "Próximos passos" do PDF saiu; no lugar dela entraram as Seções 6 a 8.
+- **Como continuar:** `obter_resultados(base, 7)$secao7$problemas` traz a tabela.
+
+#### Seção 8 — O que aprendemos sobre a base ✓
+
+**Em uma página: 28,9 bilhões de remessas, US$ 17,9 trilhões e 11,0 bilhões de toneladas estimadas,
+e cinco lições sobre como ler a base.**
+
+- **O que foi feito:** o script `scripts/09_secao8_sintese.R` calcula os totais sem e com fator e o
+  modal que lidera em cada medida; o texto da síntese fica no relatório.
+- **Decisões e por quê:** a síntese só repete o que as Seções 1 a 7 já mostraram, sem conclusões
+  novas, porque toda interpretação nova passa antes pelo Gabriel.
+- **As cinco lições:**
+  1. a base está pronta para usar, inteira, em máquina de 4 GB;
+  2. a amostra não é o retrato dos EUA;
+  3. a medida decide a resposta: o caminhão lidera em linhas e em toneladas, e a encomenda em
+     remessas;
+  4. os números são muito assimétricos, por isso escala log e medianas;
+  5. a carga é local.
+- **O que mudou:** nada fora do script novo e do relatório.
+- **Como continuar:** `obter_resultados(base, 8)$secao8` traz os números da síntese.
+
 #### O relatório do Check-in 2 em PDF (em andamento)
 
-**As Seções 1 a 5 já estão num PDF só, de 22 páginas, com todos os gráficos e na identidade visual
-do grupo. Ele cresce a cada seção que fica pronta.**
+**As oito seções já estão num PDF só, de 26 páginas, com todos os gráficos e na identidade visual
+do grupo. Falta a revisão do texto pelo grupo.**
 
-- **O que foi feito:** o `reports/checkin2.qmd` junta as cinco seções num PDF:
+- **O que foi feito:** o `reports/checkin2.qmd` junta as oito seções num PDF:
   - **capa e "Em resumo":** seis números grandes, como ler "sem fator" e "com fator", e o sumário;
   - **uma página de abertura por seção**, com uma linha no rodapé que mostra em qual das 8 seções o
     leitor está;
@@ -754,8 +819,7 @@ do grupo. Ele cresce a cada seção que fica pronta.**
     Seção 1 quanto pelo PDF do check-in;
   - os títulos das tabelas, que o PDF da Seção 1 perdia, voltaram a aparecer.
 - **Como continuar:** `quarto render reports/checkin2.qmd` gera o `reports/checkin2.pdf` em cerca de
-  1,5 min. Quando uma das Seções 6 a 8 ficar pronta, ela entra no lugar da linha "Em construção" de
-  "Próximos passos".
+  1,5 min.
 
 ---
 
@@ -839,7 +903,7 @@ base |> count(SCTG) |> collect() |> rotular(dic, "SCTG")
 ### 4.5 Relatórios e testes
 
 ```bash
-quarto render reports/checkin2.qmd           # o PDF do Check-in 2 (Seções 1 a 5), em cerca de 1,5 min
+quarto render reports/checkin2.qmd           # o PDF do Check-in 2 (Seções 1 a 8), em cerca de 1,5 min
 quarto render reports/secao1_qualidade.qmd   # só a Seção 1, em .html e .pdf, em cerca de 2,5 min
 Rscript tests/testthat.R                     # 289 verificações, em cerca de 1 min
 ```
