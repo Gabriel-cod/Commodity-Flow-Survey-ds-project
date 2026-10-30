@@ -1,6 +1,6 @@
 ---
 title: "Seção 1 — Preparação e qualidade dos dados (CFS 2022 PUMS)"
-author: "Grupo 6 — Gabriel e Gustavo"
+author: "Grupo 6 — Gabriel, Gustavo e Mirella"
 lang: pt
 format:
   html:
