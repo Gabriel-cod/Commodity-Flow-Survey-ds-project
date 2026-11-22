@@ -12,6 +12,12 @@ default:
     interim: "data/interim"
     # cache dos resultados das Secoes 2 a 8 (fora do Git)
     resultados: "data/processed/resultados"
+  # Base de modelagem do Check-in 3 (FSD 32.3): mesma amostra e divisao nas
+  # Partes A e B; nada disso fica fixo no codigo (ata de 15/11).
+  modelagem:
+    semente: 2026
+    tamanho_amostra: 100000
+    prop_treino: 0.7
   # Banco padrao: DuckDB local, funciona sem .Renviron e sem rede.
   banco:
     driver: "duckdb"

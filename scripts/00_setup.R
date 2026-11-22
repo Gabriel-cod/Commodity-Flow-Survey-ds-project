@@ -10,7 +10,11 @@ pacotes <- c(
   "DBI",         # interface generica de banco
   "dbplyr",      # dplyr sobre SQL
   "duckdb",      # banco analitico local (ambiente local_duckdb)
-  "RPostgres"    # banco externo Postgres (ambiente postgres)
+  "RPostgres",   # banco externo Postgres (ambiente postgres)
+  "rsample",     # Check-in 3: divisao treino/teste
+  "yardstick",   # Check-in 3: metricas do classificador
+  "probably",    # Check-in 3: desempenho por limiar
+  "marginaleffects" # Check-in 3: probabilidades por perfil
 )
 
 faltando <- pacotes[!vapply(pacotes, requireNamespace, logical(1), quietly = TRUE)]

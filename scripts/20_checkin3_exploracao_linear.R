@@ -12,58 +12,19 @@
 source(here::here("scripts", "00_setup.R"))
 source(here::here("scripts", "02_trata_base.R"))
 
-# Seed e tamanho ficam aqui ate a base de modelagem ir para o config.yml.
-SEMENTE_AMOSTRA <- 2026
-TAMANHO_AMOSTRA <- 100000
+# Semente e tamanho da amostra vem do config.yml (bloco modelagem); as
+# variaveis, niveis e o GVIF, de R/modelagem.R.
+SEMENTE_AMOSTRA <- cfg("modelagem", "semente")
+TAMANHO_AMOSTRA <- cfg("modelagem", "tamanho_amostra")
 
 PASTA_FIG <- here::here("outputs", "figures", "checkin3")
 PASTA_TAB <- here::here("outputs", "tables", "checkin3")
 
-# Exclusoes propostas na ata (SCTG colapsado e modal desconhecido).
-REGRA_POPULACAO <- "NOT fl_sctg_colapsado AND MODE <> '30'"
-
-SETORES <- c(
-  "21" = "Mineração e extração",
-  "31-33" = "Indústria de transformação",
-  "42" = "Comércio atacadista",
-  "44-45" = "Comércio varejista",
-  "48-49" = "Transporte e armazenagem",
-  "51" = "Informação",
-  "55" = "Gestão de empresas"
-)
-
-# Familias de modal do Check-in 2, sem "desconhecido" (excluido acima).
-# Ferrovia, hidrovia, duto e outros juntos: separados teriam ~280, 15, 29 e
-# 0 linhas na amostra de 100 mil (decisao do grupo, 21/11/2026).
-MODAL_AGRUPADO <- "Ferrovia, hidrovia, duto e outros"
-MODAIS <- c(
-  "111" = "Caminhão", "112" = "Caminhão", "113" = "Retirada pelo cliente",
-  "12" = MODAL_AGRUPADO, "131" = MODAL_AGRUPADO, "132" = MODAL_AGRUPADO, "133" = MODAL_AGRUPADO,
-  "14" = "Aéreo", "15" = MODAL_AGRUPADO, "16" = MODAL_AGRUPADO, "21" = "Encomenda",
-  "22" = "Multimodal", "23" = "Multimodal", "24" = "Multimodal", "25" = "Multimodal"
-)
-
 PREDITORES <- c(ln_peso = "ln(peso)", ln_dist = "ln(distância)", dist_km = "Distância (km)",
-                setor = "Setor", modal = "Modal", perigoso = "Periculosidade",
+                setor = "Setor", modal = "Modal", perigosa = "Periculosidade",
                 temperatura = "Controle de temperatura")
 NUMERICOS <- c("ln_peso", "ln_dist", "dist_km")
-CATEGORICOS <- c("setor", "modal", "perigoso", "temperatura")
-
-# SQL das colunas derivadas; HAZMAT H e P viram "perigoso" (ata, ponto 5).
-.sql_variaveis <- function(base) {
-  sprintf("
-    SELECT ln(SHIPMT_VALUE) AS ln_valor, ln(SHIPMT_WGHT) AS ln_peso,
-           ln(dist_km) AS ln_dist, dist_km,
-           SECTOR AS setor, %s AS modal,
-           CASE WHEN HAZMAT IN ('H', 'P') THEN 'Sim' ELSE 'Não' END AS perigoso,
-           CASE WHEN TEMP_CNTL_YN = 'Y' THEN 'Sim' ELSE 'Não' END AS temperatura
-    FROM (%s) WHERE %s",
-    .sql_case("MODE", MODAIS), dbplyr::sql_render(base), REGRA_POPULACAO)
-}
-
-.sql_case <- function(coluna, mapa) {
-  paste("CASE", paste(sprintf("WHEN %s = '%s' THEN '%s'", coluna, names(mapa), mapa), collapse = " "), "END")
-}
+CATEGORICOS <- c("setor", "modal", "perigosa", "temperatura")
 
 # --- Associacoes na populacao inteira ---------------------------------------
 
@@ -133,38 +94,6 @@ matriz_associacao <- function(con, sql, num) {
 }
 
 # --- Amostra, GVIF e graficos ------------------------------------------------
-
-# Reservatorio com semente; uma thread so para a semente valer.
-sortear_amostra <- function(con, sql) {
-  DBI::dbExecute(con, "SET threads = 1")
-  on.exit(DBI::dbExecute(con, sprintf("SET threads = %d", THREADS_CONSULTA)))
-  a <- DBI::dbGetQuery(con, sprintf("SELECT * FROM (%s) USING SAMPLE reservoir(%d ROWS) REPEATABLE (%d)",
-                                    sql, TAMANHO_AMOSTRA, SEMENTE_AMOSTRA))
-  # Niveis fixos: categoria rara que nao cai na amostra continua no grafico;
-  # Caminhao (o mais comum) fica como referencia.
-  a |>
-    dplyr::mutate(setor = factor(SETORES[setor], SETORES),
-                  modal = factor(modal, unique(MODAIS)),
-                  perigoso = factor(perigoso, c("Não", "Sim")),
-                  temperatura = factor(temperatura, c("Não", "Sim")))
-}
-
-# GVIF de Fox & Monette (1992): det(R11) det(R22) / det(R), com R a matriz de
-# correlacao das colunas do modelo sem intercepto. GVIF^(1/(2 gl)) e
-# comparavel a raiz do VIF de um preditor numerico.
-gvif <- function(modelo) {
-  x <- model.matrix(modelo)[, -1, drop = FALSE]
-  atrib <- attr(model.matrix(modelo), "assign")[-1]
-  r <- cor(x)
-  det_r <- det(r)
-  termos <- attr(terms(modelo), "term.labels")
-  purrr::map_dfr(seq_along(termos), function(i) {
-    j <- atrib == i
-    valor <- det(r[j, j, drop = FALSE]) * det(r[!j, !j, drop = FALSE]) / det_r
-    tibble::tibble(preditor = termos[i], gl = sum(j), gvif = valor,
-                   gvif_ajustado = valor^(1 / (2 * sum(j))))
-  })
-}
 
 .salvar <- function(grafico, nome, largura = 7, altura = 4.6) {
   ggplot2::ggsave(file.path(PASTA_FIG, paste0(nome, ".png")), grafico, width = largura, height = altura,
@@ -281,7 +210,7 @@ executar_exploracao <- function() {
   base <- obter_base_tratada(pipeline = FALSE)
   on.exit(fechar_base(base))
   con <- dbplyr::remote_con(base)
-  sql <- .sql_variaveis(base)
+  sql <- sql_modelagem(base)
 
   message("Numericas na populacao...")
   num <- numericas_populacao(con, sql)
@@ -295,12 +224,12 @@ executar_exploracao <- function() {
   matriz <- matriz_associacao(con, sql, num)
 
   message("Amostra...")
-  a <- sortear_amostra(con, sql)
+  a <- sortear_modelagem(con, sql)
   # Spearman so na amostra: o DuckDB nao tem rank de correlacao pronto.
   spearman <- c(ln_peso = cor(a$ln_valor, a$ln_peso, method = "spearman"),
                 dist_km = cor(a$ln_valor, a$dist_km, method = "spearman"))
 
-  modelo <- lm(ln_valor ~ ln_peso + ln_dist + setor + modal + perigoso + temperatura, data = droplevels(a))
+  modelo <- lm(ln_valor ~ ln_peso + ln_dist + setor + modal + perigosa + temperatura, data = droplevels(a))
   tab_gvif <- gvif(modelo)
 
   resposta <- tibble::tibble(
@@ -338,9 +267,9 @@ executar_exploracao <- function() {
           "02b_valor_distancia_log")
   .salvar(grafico_distancia_parcial(a, parcial$r_parcial_dado_ln_peso[1], num$r_ln_dist, n_pop), "02c_valor_distancia_dado_peso")
   titulos <- c(setor = "Valor × setor de quem envia", modal = "Valor × modal de transporte",
-               perigoso = "Valor × periculosidade (HAZMAT)", temperatura = "Valor × controle de temperatura")
+               perigosa = "Valor × periculosidade (HAZMAT)", temperatura = "Valor × controle de temperatura")
   eixos <- c(setor = "Setor (NAICS)", modal = "Família de modal",
-             perigoso = "Carga perigosa (HAZMAT H ou P)", temperatura = "Temperatura controlada")
+             perigosa = "Carga perigosa (HAZMAT H ou P)", temperatura = "Temperatura controlada")
   for (i in seq_along(CATEGORICOS)) {
     g <- CATEGORICOS[i]
     p <- grafico_categorico(a, g, resumo, eta_resp[[g]], titulos[[g]], eixos[[g]], n_pop)
