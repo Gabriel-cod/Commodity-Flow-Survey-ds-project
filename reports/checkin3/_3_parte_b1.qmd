@@ -1,0 +1,10 @@
+<!-- Parte B1 (Seção 5, logística simples). Responsável: (a preencher).
+     Texto livre para editar; os números vêm dos atalhos do setup em checkin3.qmd. -->
+
+# Seção 5 — Regressão logística: de caminhão ou não?
+
+```{r}
+em_construcao()
+```
+
+A logística simples (`caminhao ~ ln_peso`) entra na Fase 19.

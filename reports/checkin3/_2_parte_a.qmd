@@ -1,0 +1,196 @@
+<!-- Parte A (Seções 2 a 4): regressão linear múltipla. Responsável: (a preencher).
+     Texto livre para editar; os números vêm dos atalhos do setup em checkin3.qmd. -->
+
+# Seção 2 — Regressão linear: modelos inicial e ampliado
+
+## Os dois modelos
+
+- **Inicial:** `ln_valor ~ ln_peso + modal + setor`, os três preditores mais associados ao valor.
+- **Ampliado:** o inicial mais `ln_dist`, `perigosa` e `temperatura`.
+
+Os dois usam as `r n_fmt(ajuste("ampliado", "n"))` remessas do treino (`nobs()`).
+
+```{r}
+#| label: tab-coeficientes
+ini <- dplyr::filter(a$coeficientes, modelo == "inicial")
+a$coeficientes |>
+  dplyr::filter(modelo == "ampliado") |>
+  dplyr::transmute(Termo = rotulo, Inicial = ifelse(term %in% ini$term, num(ini$estimate[match(term, ini$term)], 3), "—"),
+                   Ampliado = num(estimate, 3), EP = num(std.error, 3),
+                   `IC 95%` = paste0(num(conf.low, 3), " a ", num(conf.high, 3)),
+                   p = p_fmt(p.value), `Efeito (%)` = ifelse(term %in% c("(Intercept)", "ln_peso", "ln_dist"), "—", num(efeito_pct, 1))) |>
+  tabela(caption = "Coeficientes (EP, IC e valor-p do modelo ampliado)", align = "lrrrrrr")
+```
+
+## O que os coeficientes dizem
+
+Todos comparam remessas iguais nas demais variáveis do modelo ampliado.
+
+1. **Peso.** O coeficiente de ln(peso) é `r num(coef_a("ln_peso"), 3)`: uma remessa 1% mais pesada
+   vale cerca de `r num(coef_a("ln_peso"), 2)`% a mais. Dobrar o peso aumenta o valor típico em
+   `r pct1(efeito_pct(coef_a("ln_peso") * log(2)), 0)`, e não em 100%: remessas grandes valem
+   menos por libra.
+2. **Encomenda.** Mandada por encomenda (correio ou courier), a remessa vale
+   `r pct1(coef_a("modalEncomenda", coluna = "efeito_pct"), 0)` a mais que uma de caminhão com o
+   mesmo peso, setor e distância.
+3. **Carga perigosa.** Vale `r pct1(-coef_a("perigosaSim", coluna = "efeito_pct"), 0)` a menos
+   que uma não perigosa de mesmo peso, modal, setor e distância: por libra, é mais barata.
+4. **Distância.** Dobrar a distância aumenta o valor típico em
+   `r pct1(efeito_pct(coef_a("ln_dist") * log(2)), 1)`, com o resto igual.
+
+**Teste F global.** F = `r n_fmt(ajuste("ampliado", "f"))` com `r ajuste("ampliado", "gl_f")` e
+`r n_fmt(ajuste("ampliado", "n") - ajuste("ampliado", "coeficientes"))` graus de liberdade
+(valor-p `r p_fmt(ajuste("ampliado", "p_f"))`): ao menos um preditor tem relação com o valor.
+Com 70 mil linhas, quase todo coeficiente sai "significativo"; o que importa é o tamanho do efeito.
+
+## Do inicial para o ampliado
+
+```{r}
+#| label: tab-jornal
+a$jornal |>
+  dplyr::transmute(Variável = rotulo, `Sozinha` = num(sozinha, 3), `No ampliado` = num(ampliado, 3)) |>
+  tabela(caption = "Coeficiente com a variável sozinha e no modelo ampliado", align = "lrr")
+```
+
+Como no exemplo do jornal do ISLR (3.2), o sinal de uma variável sozinha pode enganar. Sozinha, a
+**distância** tem coeficiente negativo: remessas que vão longe parecem valer menos. Mas elas também
+são mais leves (a correlação entre ln(distância) e ln(peso) é `r num(a$correlacoes$dist_peso)`), e
+o peso explica o valor. Descontado o peso, a distância passa a somar valor. Com a carga perigosa e a
+refrigerada acontece o contrário: positivas sozinhas e negativas no modelo. A perigosa pesa, em
+média, `r n_fmt(a$correlacoes$razao_peso_perigosa)` vezes mais que a não perigosa (média
+geométrica): sozinha, ela vale mais porque é pesada; com o peso no modelo, vale menos por libra.
+
+Do inicial para o ampliado, o coeficiente do peso quase não muda
+(`r num(coef_a("ln_peso", "inicial"), 3)` → `r num(coef_a("ln_peso"), 3)`), mas o da encomenda
+cai de `r num(coef_a("modalEncomenda", "inicial"), 3)` para `r num(coef_a("modalEncomenda"), 3)`:
+as encomendas vão mais longe que o caminhão, e parte do que o inicial atribuía ao modal era
+distância. Mesmo assim, nenhum GVIF preocupa (Apêndice).
+
+# Seção 3 — Qualidade do ajuste e diagnóstico
+
+## Ajuste
+
+```{r}
+#| label: tab-ajuste
+a$ajuste |>
+  dplyr::filter(modelo %in% c("inicial", "ampliado")) |>
+  dplyr::transmute(Modelo = c(inicial = "Inicial", ampliado = "Ampliado")[modelo], Coeficientes = coeficientes,
+                   `R²` = num(r2, 3), `R² ajustado` = num(r2_ajustado, 3), RSE = num(rse, 3)) |>
+  tabela(caption = "Qualidade do ajuste no treino", align = "lrrrr")
+```
+
+- O ampliado explica `r pct1(100 * ajuste("ampliado", "r2"))` da variação de ln(valor), contra
+  `r pct1(100 * ajuste("inicial", "r2"))` do inicial: o peso, o modal e o setor fazem quase tudo.
+- O RSE é `r num(ajuste("ampliado", "rse"))` em log. Na escala do dinheiro, a remessa típica fica
+  entre 1/`r num(exp(ajuste("ampliado", "rse")), 1)` e `r num(exp(ajuste("ampliado", "rse")), 1)`
+  vezes o valor previsto. O modelo acerta a ordem de grandeza, não o preço.
+
+## Diagnóstico do modelo ampliado
+
+```{r}
+#| label: fig-diagnostico
+#| layout-ncol: 2
+#| fig-width: 4.4
+#| fig-height: 3.4
+ga$residuos
+ga$escala_locacao
+ga$qq
+ga$alavancagem
+```
+
+- **Linearidade:** a média dos resíduos fica perto de zero em toda a faixa, com leve ondulação.
+- **Variância:** quase constante; a dispersão cresce um pouco nas pontas (remessas muito baratas
+  ou muito caras).
+- **Normalidade:** as caudas são mais pesadas que as da normal (curtose
+  `r num(diag_a("curtose"), 1)`, contra 3). Com 70 mil linhas, os intervalos dos coeficientes
+  continuam válidos; os intervalos de predição ficam um pouco otimistas nas pontas.
+- **Resíduos studentizados acima de 3:** `r n_fmt(diag_a("studentizado_3"))` remessas
+  (`r pct1(100 * diag_a("studentizado_3") / diag_a("n"))`, contra 0,27% esperado na normal). As
+  maiores são encomendas de 1 a 30 libras que valem dezenas ou centenas de milhares de dólares
+  (Apêndice). O arquivo não diz o que são; não há motivo para tirá-las, e elas ficam no modelo.
+- **Alavancagem e Cook:** `r n_fmt(diag_a("alavancagem_3x"))` remessas passam de 3·(p+1)/n, mas
+  a maior alavancagem é `r num(diag_a("alavancagem_max"), 4)` e a maior distância de Cook,
+  `r num(diag_a("cook_max"), 4)`, muito abaixo de 1: nenhuma remessa sozinha muda o modelo.
+- **Colinearidade:** todos os GVIF ajustados ficam abaixo de
+  `r num(max(a$gvif$gvif_ajustado), 2)` (Apêndice).
+- **Erros correlacionados:** a amostra foi sorteada ao acaso, mas o Census sorteia
+  estabelecimentos, e remessas do mesmo remetente se parecem. O arquivo não identifica o
+  remetente, então não dá para medir isso: os erros-padrão devem ser mais otimistas do que
+  parecem.
+
+# Seção 4 — Modificação, comparação e previsão
+
+## A modificação: o peso pesa diferente em cada setor
+
+```{r}
+#| label: fig-residuo-setor
+#| fig-height: 4.2
+ga$residuo_setor
+```
+
+No modelo ampliado, o peso tem uma inclinação só. Os resíduos mostram que ela não serve a todos:
+a inclinação dos resíduos em ln(peso) vai de
+`r num(min(a$inclinacao_setor$inclinacao), 2)` a `r num(max(a$inclinacao_setor$inclinacao), 2)`
+entre os setores. O modelo **modificado** acrescenta a interação `ln_peso:setor`, que dá a cada
+setor a sua inclinação (6 coeficientes a mais). Um termo quadrático em ln(peso) também foi
+testado e não melhorou o erro de teste.
+
+## Comparação
+
+```{r}
+#| label: tab-comparacao
+a$ajuste |>
+  dplyr::transmute(Modelo = c(nulo = "Nulo (média)", inicial = "Inicial", ampliado = "Ampliado",
+                              modificado = "Modificado")[modelo],
+                   n = n, Coeficientes = coeficientes, `R²` = num(r2, 3), `R² ajustado` = num(r2_ajustado, 3),
+                   RSE = num(rse, 3), `RMSE de teste` = num(rmse_teste, 3)) |>
+  tabela(caption = "Os quatro modelos: ajuste no treino e erro no teste", align = "lrrrrrr")
+```
+
+```{r}
+#| label: tab-anova
+a$anova |>
+  dplyr::transmute(Comparação = c(inicial_ampliado = "Inicial → ampliado", ampliado_modificado = "Ampliado → modificado")[comparacao],
+                   `Coeficientes a mais` = df, F = num(statistic, 1), `Valor-p` = p_fmt(p.value)) |>
+  tabela(caption = "Teste F parcial (anova) entre modelos encaixados", align = "lrrr")
+```
+
+- Cada passo reduz o erro de teste, e o teste F parcial confirma os dois.
+- O RMSE de teste (`r num(ajuste("modificado", "rmse_teste"), 3)`) fica igual ao RSE do treino
+  (`r num(ajuste("modificado", "rse"), 3)`): com 70 mil linhas e 22 coeficientes, não há
+  sobreajuste.
+- **Modelo final: o modificado.** O ganho é pequeno, mas aparece no teste e tem leitura clara.
+
+```{r}
+#| label: fig-curvas-setor
+ga$curvas_setor
+```
+
+Na mineração, o valor cresce devagar com o peso; na informação, cresce mais depressa que nos
+outros setores. A inclinação de cada setor está no Apêndice (linhas "ln(peso) × setor").
+
+## Previsão para dois perfis
+
+```{r}
+#| label: tab-perfis
+a$perfis |>
+  dplyr::transmute(Perfil = perfil,
+                   Remessa = sprintf("%s lb, %s km, %s, %s", n_fmt(peso_lb), n_fmt(dist_km), setor, tolower(modal)),
+                   Previsto = paste0("US\\$\u00a0", n_fmt(ln_previsto_usd)),
+                   `IC 95% (média)` = paste(n_fmt(ic_inf_usd), "a", n_fmt(ic_sup_usd)),
+                   `IP 95% (uma remessa)` = paste(n_fmt(ip_inf_usd), "a", n_fmt(ip_sup_usd))) |>
+  tabela(caption = "Valor previsto pelo modelo final (US$; nenhum perigoso ou refrigerado)", align = "llrrr")
+```
+
+- O **intervalo de confiança** diz onde está o valor típico de *todas* as remessas com esse
+  perfil: é estreito, porque o treino é grande.
+- O **intervalo de predição** diz onde deve cair *uma* remessa: vai de
+  `r usd(perfil(1, "ip_inf_usd"))` a `r usd(perfil(1, "ip_sup_usd"))` para a carga da indústria.
+  É largo porque o modelo explica dois terços da variação, e o resto é de cada remessa.
+
+## Com o fator de ponderação
+
+O modelo final foi reajustado com `weights = WGT_FACTOR`, só para comparar os coeficientes (os
+erros-padrão desse ajuste não valem). Vários mudam muito (tabela no Apêndice), porque com o fator
+as encomendas pequenas dominam a população. Os coeficientes deste documento descrevem a amostra; para
+falar das remessas reais dos EUA seria preciso um modelo pensado para pesos amostrais.

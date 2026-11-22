@@ -1,6 +1,7 @@
 source(here::here("scripts", "02_trata_base.R"))
 source(here::here("scripts", "25_resultados_checkin3.R"))
 source(here::here("scripts", "21_base_modelagem.R"))
+source(here::here("scripts", "22_parte_a_linear.R"))
 
 base_fixture <- function(env = parent.frame()) {
   base <- suppressMessages(obter_base_tratada(pipeline = TRUE, origem = test_path("fixtures", "cfs_mini.csv")))
@@ -74,7 +75,8 @@ test_that("niveis e referencias fixos, mesmo com categoria ausente (T-M3)", {
 test_that("cache do Check-in 3 grava, reaproveita e recalcula (T-M5)", {
   base <- base_fixture()
   pasta <- withr::local_tempdir()
-  r1 <- suppressMessages(obter_resultados_checkin3(base, pasta = pasta))
+  # So a base: a fixture tem linhas de menos para os modelos (T-M6 usa amostra sintetica).
+  r1 <- suppressMessages(obter_resultados_checkin3(base, "base_modelagem", pasta = pasta))
   b <- r1$base_modelagem
   expect_equal(b$populacao$linhas, 17)
   expect_equal(b$populacao$fora, 3)
@@ -82,11 +84,38 @@ test_that("cache do Check-in 3 grava, reaproveita e recalcula (T-M5)", {
   expect_equal(sum(b$resumo$linhas), 17)
   expect_true(file.exists(file.path(pasta, "base_modelagem.rds")))
 
-  expect_message(r2 <- obter_resultados_checkin3(base, pasta = pasta), NA)
+  expect_message(r2 <- obter_resultados_checkin3(base, "base_modelagem", pasta = pasta), NA)
   expect_identical(r1, r2)
 
   # outro script (chave diferente) recalcula
   script <- withr::local_tempfile(fileext = ".R")
   writeLines(c(readLines(here::here("scripts", "21_base_modelagem.R")), "# mudou"), script)
-  expect_message(obter_resultados_checkin3(base, pasta = pasta, scripts = script), "Calculando")
+  expect_message(obter_resultados_checkin3(base, "base_modelagem", pasta = pasta, scripts = script), "Calculando")
+})
+
+test_that("parte A ajusta os 4 modelos e devolve as tabelas do relatorio (T-M6)", {
+  a <- amostra_sintetica(4000)
+  # Resposta com relacao conhecida: elasticidade 0,6 e perigosa -0,5.
+  a$ln_valor <- withr::with_seed(2, 1 + 0.6 * a$ln_peso - 0.5 * (a$perigosa == "Sim") + rnorm(nrow(a)))
+  partes <- dividir_modelagem(a, 0.7, 1)
+  r <- calcular_parte_a(partes)
+
+  expect_equal(r$ajuste$modelo, names(FORMULAS_A))
+  expect_equal(r$ajuste$coeficientes, c(1, 13, 16, 22))
+  expect_equal(r$ajuste$n, rep(nrow(partes$treino), 4))
+  expect_true(all(diff(r$ajuste$r2[-1]) >= 0))
+  coef_amp <- dplyr::filter(r$coeficientes, modelo == "ampliado")
+  expect_equal(coef_amp$estimate[coef_amp$term == "ln_peso"], 0.6, tolerance = 0.05)
+  expect_equal(coef_amp$estimate[coef_amp$term == "perigosaSim"], -0.5, tolerance = 0.3)
+  expect_equal(nrow(r$jornal), 3)
+  expect_equal(r$anova$comparacao, c("inicial_ampliado", "ampliado_modificado"))
+  expect_equal(nrow(r$diagnostico), nrow(partes$treino))
+  expect_equal(nrow(r$perfis), nrow(PERFIS_A))
+  expect_true(all(r$perfis$ip_inf_usd < r$perfis$ic_inf_usd & r$perfis$ic_sup_usd < r$perfis$ip_sup_usd))
+  expect_equal(r$ponderado$term, names(coef(lm(FORMULAS_A$modificado, partes$treino))))
+  expect_equal(nrow(r$curvas_setor), length(SETORES) * 40)
+
+  bm <- list(treino = partes$treino, modelagem = list(tamanho_amostra = 4000, semente = 1))
+  g <- graficos_parte_a(r, bm)
+  expect_true(all(vapply(g, ggplot2::is_ggplot, TRUE)))
 })

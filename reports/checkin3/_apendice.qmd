@@ -1,0 +1,34 @@
+<!-- Apêndice: tabelas longas e diagnósticos extras. -->
+
+# Apêndice
+
+## Colinearidade (GVIF do modelo ampliado)
+
+```{r}
+#| label: tab-gvif
+a$gvif |>
+  dplyr::transmute(Preditor = rotular_termo(preditor), gl = gl, GVIF = num(gvif), `GVIF^(1/(2·gl))` = num(gvif_ajustado)) |>
+  tabela(caption = "GVIF de Fox e Monette; o ajustado é comparável à raiz do VIF (preocupa acima de ~2,2)", align = "lrrr")
+```
+
+## Remessas com os maiores resíduos
+
+```{r}
+#| label: tab-atipicos
+a$atipicos |>
+  dplyr::transmute(Studentizado = num(studentizado), `Valor (US\\$)` = n_fmt(valor_usd), `Previsto (US\\$)` = n_fmt(previsto_usd),
+                   `Peso (lb)` = n_fmt(peso_lb), `Distância (km)` = n_fmt(dist_km), Setor = setor, Modal = modal) |>
+  tabela(caption = "As 10 remessas do treino com maior |resíduo studentizado| no modelo ampliado", align = "rrrrrll")
+```
+
+## Modelo final: coeficientes sem e com o fator
+
+```{r}
+#| label: tab-ponderado
+a$coeficientes |>
+  dplyr::filter(modelo == "modificado") |>
+  dplyr::left_join(a$ponderado, by = c("term", "rotulo")) |>
+  dplyr::transmute(Termo = rotulo, `Sem fator` = num(estimate, 3), EP = num(std.error, 3),
+                   `Valor-p` = p_fmt(p.value), `Com fator` = num(com_fator, 3)) |>
+  tabela(caption = "Modelo modificado: coeficientes no treino sem e com WGT_FACTOR (EP e valor-p só do ajuste sem fator)", align = "lrrrr")
+```

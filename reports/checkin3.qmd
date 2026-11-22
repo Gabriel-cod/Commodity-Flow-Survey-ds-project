@@ -1,0 +1,115 @@
+---
+title: "Modelando a CFS 2022"
+subtitle: "Check-in 3 — regressão linear múltipla e regressão logística"
+author:
+  - name: "Gabriel"
+  - name: "Gustavo"
+  - name: "Mirella"
+date: today
+date-format: "DD/MM/YYYY"
+lang: pt
+format:
+  typst:
+    template-partials:
+      - typst-template.typ
+    font-paths:
+      - fontes
+    papersize: a4
+    fig-width: 6.5
+    fig-height: 3.6
+    fig-dpi: 200
+    fig-format: png
+execute:
+  echo: false
+  warning: false
+  message: false
+knitr:
+  opts_chunk:
+    dev: "ragg_png"
+---
+
+```{r}
+#| label: setup
+# O texto de cada parte fica em checkin3/_*.qmd, um arquivo por responsavel;
+# aqui so se carregam os resultados (cache) e os atalhos usados no texto.
+suppressMessages(source(here::here("scripts", "00_setup.R")))
+source(here::here("scripts", "02_trata_base.R"))
+source(here::here("scripts", "25_resultados_checkin3.R"))
+source(here::here("scripts", "22_parte_a_linear.R"))
+registrar_fontes_cfs()
+
+base <- suppressMessages(obter_base_tratada(pipeline = FALSE))
+res <- obter_resultados_checkin3(base)
+fechar_base(base)
+
+bm <- res$base_modelagem
+a <- res$parte_a
+ga <- graficos_parte_a(a, bm)
+
+# Atalhos do texto
+num <- function(x, d = 2) n_fmt(x, d)
+pct1 <- function(x, d = 1) paste0(n_fmt(x, d), "%")
+# "\\$": sem o escape, o Pandoc le o trecho entre dois cifroes como formula.
+usd <- function(x) paste0("US\\$ ", n_fmt(x))
+ajuste <- function(modelo, coluna) a$ajuste[[coluna]][a$ajuste$modelo == modelo]
+coef_a <- function(termo, modelo = "ampliado", coluna = "estimate") {
+  x <- a$coeficientes
+  x[[coluna]][x$modelo == modelo & x$term == termo]
+}
+diag_a <- function(coluna, modelo = "ampliado") a$diagnostico_resumo[[coluna]][a$diagnostico_resumo$modelo == modelo]
+parte <- function(nome, coluna) bm$resumo[[coluna]][bm$resumo$parte == nome]
+perfil <- function(i, coluna) a$perfis[[coluna]][i]
+
+# Bloco Typst cru: o knitr nao avalia codigo dentro dele.
+typst <- function(...) knitr::asis_output(paste0("\n```{=typst}\n", paste0(...), "\n```\n"))
+numero <- function(valor, rotulo, destaque = FALSE) {
+  sprintf('numero([%s], [%s]%s)', valor, rotulo, if (destaque) ", destaque: true" else "")
+}
+em_construcao <- function() typst('#etiqueta("Em construção", tipo: "atencao")')
+```
+
+# Em resumo
+
+Este documento reúne as oito seções do Check-in 3. A Parte A explica o **valor** de uma remessa
+com uma regressão linear múltipla; a Parte B prevê se a remessa **sai de caminhão** com uma
+regressão logística. Os modelos são ajustados numa amostra de `r n_fmt(bm$modelagem$tamanho_amostra)`
+remessas e avaliados em remessas que eles não viram.
+
+```{r}
+#| label: resumo-numeros
+typst(
+  "#grid(columns: (1fr, 1fr, 1fr), column-gutter: 8pt, row-gutter: 8pt,\n",
+  numero(n_fmt(bm$modelagem$tamanho_amostra), "remessas sorteadas para modelar, 70% treino e 30% teste"), ",\n",
+  numero(pct1(100 * ajuste("modificado", "r2"), 0), "da variação de ln(valor) explicada pelo modelo final da Parte A", TRUE), ",\n",
+  numero(paste0("+", pct1(efeito_pct(coef_a("ln_peso") * log(2)), 0)), "de valor quando o peso dobra, com o resto igual"), ",\n",
+  ")"
+)
+```
+
+## Como ler os números
+
+- **Sem fator.** Os modelos usam as linhas da amostra, sem o `WGT_FACTOR`: os coeficientes
+  descrevem a **amostra** do Census, não as remessas reais dos EUA. A Seção 4 mostra o quanto eles
+  mudam com o fator.
+- **Escala log.** Valor, peso e distância entram em logaritmo. Um coeficiente *b* de uma variável
+  sim/não ou de uma categoria vira `100·(e^b − 1)`% no valor típico; o de ln(peso) é uma
+  elasticidade (1% a mais de peso, *b*% a mais de valor).
+- **Treino e teste.** Tudo é ajustado no treino; o teste só mede o erro em remessas novas.
+
+## Neste documento
+
+```{=typst}
+#outline(title: none, depth: 1)
+```
+
+{{< include checkin3/_1_base.qmd >}}
+
+{{< include checkin3/_2_parte_a.qmd >}}
+
+{{< include checkin3/_3_parte_b1.qmd >}}
+
+{{< include checkin3/_4_parte_b2.qmd >}}
+
+{{< include checkin3/_5_fechamento.qmd >}}
+
+{{< include checkin3/_apendice.qmd >}}

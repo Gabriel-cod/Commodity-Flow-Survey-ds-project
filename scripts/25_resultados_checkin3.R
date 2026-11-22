@@ -9,7 +9,8 @@ if (!exists(".obter_secao", mode = "function")) source(here::here("scripts", "10
 
 # Em ordem: cada parte usa as anteriores (todas usam a base de modelagem).
 SCRIPTS_CHECKIN3 <- c(
-  base_modelagem = "21_base_modelagem.R"
+  base_modelagem = "21_base_modelagem.R",
+  parte_a = "22_parte_a_linear.R"
 )
 
 obter_resultados_checkin3 <- function(base, partes = names(SCRIPTS_CHECKIN3),

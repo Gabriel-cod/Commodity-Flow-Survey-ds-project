@@ -52,16 +52,18 @@ sql_modelagem <- function(base) {
 }
 
 # Niveis fixos com a referencia primeiro: categoria rara fora da amostra
-# continua nos graficos e o lm sempre compara com o mesmo nivel.
-fatorar_modelagem <- function(dados) {
+# continua nos graficos e o lm sempre compara com o mesmo nivel. Recebe o
+# setor ja com o nome em portugues (perfis) ou, em fatorar_modelagem(), o codigo.
+niveis_modelagem <- function(d) {
   com_ref <- function(niveis, ref) c(ref, setdiff(niveis, ref))
-  dplyr::mutate(dados,
-    setor = factor(unname(SETORES[setor]), com_ref(SETORES, REFERENCIAS[["setor"]])),
-    modal = factor(modal, com_ref(unique(MODAIS), REFERENCIAS[["modal"]])),
-    perigosa = factor(perigosa, SIM_NAO),
-    temperatura = factor(temperatura, SIM_NAO),
-    caminhao = factor(caminhao, SIM_NAO)
-  )
+  d |>
+    dplyr::mutate(setor = factor(setor, com_ref(SETORES, REFERENCIAS[["setor"]])),
+                  modal = factor(modal, com_ref(unique(MODAIS), REFERENCIAS[["modal"]]))) |>
+    dplyr::mutate(dplyr::across(dplyr::any_of(c("perigosa", "temperatura", "caminhao")), ~ factor(.x, SIM_NAO)))
+}
+
+fatorar_modelagem <- function(dados) {
+  niveis_modelagem(dplyr::mutate(dados, setor = unname(SETORES[setor])))
 }
 
 # GVIF de Fox & Monette (1992): det(R11) det(R22) / det(R), com R a matriz de
@@ -90,4 +92,64 @@ sortear_modelagem <- function(con, sql, tamanho = cfg("modelagem", "tamanho_amos
   a <- DBI::dbGetQuery(con, sprintf("SELECT * FROM (%s) USING SAMPLE reservoir(%d ROWS) REPEATABLE (%d)",
                                     sql, as.integer(tamanho), as.integer(semente)))
   fatorar_modelagem(tibble::as_tibble(a))
+}
+
+# Nome legivel de cada termo do broom::tidy() para as tabelas do PDF.
+rotular_termo <- function(termo) {
+  r <- termo
+  r <- sub("^\\(Intercept\\)$", "Intercepto", r)
+  r <- gsub("ln_peso", "ln(peso)", r)
+  r <- gsub("ln_dist", "ln(distância)", r)
+  r <- gsub("ln_valor", "ln(valor)", r)
+  r <- sub("^modal(.+)$", "Modal: \\1", r)
+  r <- sub("^setor(.+)$", "Setor: \\1", r)
+  r <- sub(":setor", " × setor: ", r)
+  r <- sub("^perigosaSim$", "Perigosa: sim", r)
+  r <- sub("^temperaturaSim$", "Temperatura controlada: sim", r)
+  r
+}
+
+# Escala log -> % na escala original: exp(b) - 1.
+efeito_pct <- function(b) 100 * (exp(b) - 1)
+
+# --- Graficos da modelagem ---------------------------------------------------
+
+rodape_modelagem <- function(base_modelagem, parte = c("treino", "teste")) {
+  parte <- match.arg(parte)
+  m <- base_modelagem$modelagem
+  sprintf("Fonte: CFS 2022 PUMS. %s: %s linhas da amostra de modelagem (%s linhas, semente %d), sem fator.",
+          if (parte == "treino") "Treino" else "Teste", rotulo_num()(nrow(base_modelagem[[parte]])),
+          rotulo_num()(m$tamanho_amostra), m$semente)
+}
+
+# passo = 2 para paineis estreitos (facetas): 1, 100, 10 mil, 1 mi.
+eixo_peso <- function(passo = 1) {
+  curto <- function(b) {
+    v <- round(exp(b))
+    ifelse(v >= 1e6, paste(v / 1e6, "mi"), ifelse(v >= 1e4, paste(v / 1e3, "mil"), rotulo_num()(v)))
+  }
+  ggplot2::scale_x_continuous(breaks = log(10^seq(0, 6, passo)), labels = if (passo > 1) curto else function(b) rotulo_num()(round(exp(b))))
+}
+
+# Afasta rotulos de fim de linha que se sobrepoem, mantendo a ordem vertical.
+espalhar <- function(y, folga) {
+  o <- order(y)
+  z <- y[o]
+  for (i in seq_along(z)[-1]) z[i] <- max(z[i], z[i - 1] + folga)
+  z <- z - mean(z - y[o])
+  y[o] <- z
+  y
+}
+
+eixo_valor <- function(nome = "Valor da remessa (US$, escala log)") {
+  ggplot2::scale_y_continuous(nome, breaks = log(10^(0:7)), labels = function(b) paste0("US$ ", rotulo_num()(round(exp(b)))))
+}
+
+# Media de y em 20 faixas de igual contagem de x: mostra curvas que a reta
+# esconde, sem o custo de memoria de um suavizador.
+medias_faixa <- function(d, x, y) {
+  d |>
+    dplyr::mutate(faixa = dplyr::ntile(.data[[x]], 20)) |>
+    dplyr::group_by(faixa) |>
+    dplyr::summarise(x = mean(.data[[x]]), y = mean(.data[[y]]), .groups = "drop")
 }
