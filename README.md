@@ -11,7 +11,8 @@ cada check-in e o motivo de cada decisão tomada.**
 | Entrega | Prazo | Situação |
 |---|---|---|
 | Check-in 1: conhecendo a base | 30/09/2026 | Entregue |
-| Check-in 2: explorando e descrevendo a base | 26/10/2026 | Pronto: as 8 seções estão no PDF `reports/checkin2.pdf` |
+| Check-in 2: explorando e descrevendo a base | 26/10/2026 | Entregue: as 8 seções estão no PDF `reports/checkin2.pdf` |
+| Check-in 3: modelando os dados (regressões linear e logística) | 23/11/2026 | Em andamento. A exploração dos preditores da regressão linear está pronta |
 
 ## Por onde começar
 
@@ -166,7 +167,8 @@ Por que foi feito assim:
 ├── scripts/
 │   ├── 00_setup.R          carrega os pacotes e as funções de R/
 │   ├── 01_explora_dados_brutos.R   primeira olhada no CSV completo (Check-in 1)
-│   └── 02_trata_base.R     o tratamento: obter_base_tratada() e fechar_base()
+│   ├── 02_trata_base.R     o tratamento: obter_base_tratada() e fechar_base()
+│   └── 20_checkin3_exploracao_linear.R   preditores da regressão linear (Check-in 3)
 ├── data/
 │   ├── raw/                CSV original. Nunca é escrito e não vai para o Git
 │   ├── processed/          base tratada (cfs_tratada.duckdb). Não vai para o Git
@@ -821,6 +823,109 @@ do grupo. O texto foi revisado e aprovado.**
 - **Como continuar:** `quarto render reports/checkin2.qmd` gera o `reports/checkin2.pdf` em cerca de
   1,5 min.
 
+### Check-in 3 — Modelando os dados (prazo 23/11/2026)
+
+**Em andamento. Agora entram os modelos: uma regressão linear, que tenta prever o valor de uma
+remessa, e uma logística, que tenta prever se ela vai só de caminhão. A primeira etapa da linear,
+conferir se os candidatos a preditor servem, está pronta.**
+
+A pergunta central do check-in é *"o que os modelos explicam, o que preveem e onde falham?"*. As
+variáveis foram discutidas na 1ª reunião (15/11/2026), e a 2ª reunião é em 22/11/2026.
+
+| Parte | Tema | Situação |
+|---|---|---|
+| A | Regressão linear múltipla: prever ln(valor da remessa) | **Exploração dos preditores pronta**; modelos a fazer |
+| B | Regressão logística: a remessa vai só por caminhão? | A fazer |
+
+#### Parte A — Os preditores da regressão linear ✓
+
+**O peso da remessa, sozinho, explica 59% da variação do valor, e os seis preditores não se
+atrapalham entre si. A distância parece baratear a carga, mas, entre remessas do mesmo peso, quanto
+mais longe, mais valiosa.**
+
+- **O que foi feito:** o script `scripts/20_checkin3_exploracao_linear.R` mede, para cada candidato
+  a preditor, duas coisas:
+  1. **quanto ele se associa ao valor** (em log), com um gráfico de dispersão por par;
+  2. **quanto ele se parece com os outros preditores**, porque preditores parecidos demais confundem
+     o modelo.
+
+  | Preditor | Tipo | Como entra |
+  |---|---|---|
+  | Peso da remessa | numérico | em log |
+  | Distância | numérico | testada em km e em log |
+  | Setor de quem envia (`SECTOR`) | categórico | 7 setores |
+  | Modal | categórico | 6 famílias |
+  | Carga perigosa (`HAZMAT`) | sim/não | H ou P = sim |
+  | Controle de temperatura | sim/não | `TEMP_CNTL_YN` = Y |
+
+  - **Onde cada medida é calculada:**
+    - as medidas usam a população inteira: 36.932.789 linhas, sem mercadoria escondida e sem modal
+      desconhecido;
+    - os gráficos e o teste de colinearidade usam uma amostra sorteada de 100 mil linhas, sempre a
+      mesma (semente 2026).
+  - **Saídas:** 9 gráficos em `outputs/figures/checkin3/` e 6 tabelas em `outputs/tables/checkin3/`.
+- **O que os números mostram:**
+
+  | Preditor | Associação com ln(valor) | Quanto explica sozinho |
+  |---|---|---|
+  | Peso (log) | correlação de 0,77 | 59% |
+  | Modal | η² = 0,22 | 22% |
+  | Setor | η² = 0,12 | 12% |
+  | Distância (log) | correlação de −0,13; **+0,19 descontado o peso** | 2% |
+  | Controle de temperatura | η² = 0,016 | 1,6% |
+  | Carga perigosa | η² = 0,008 | 0,8% |
+
+  - **A distância engana quando vista sozinha.** O "peso" aqui é o peso da carga, e não o fator de
+    ponderação:
+    - remessas que viajam longe tendem a ser mais leves (correlação de −0,32);
+    - como o peso é o que mais puxa o valor, as remessas longas parecem mais baratas;
+    - comparando remessas do mesmo peso, o sinal se inverte, e quanto mais longe, maior o valor.
+
+    É o fenômeno que o professor pede para discutir com o exemplo do "jornal" do ISLR (seção 3.2).
+  - **Carga refrigerada e carga perigosa valem mais.** A remessa típica refrigerada vale cerca de
+    US$ 400, contra US$ 185 das demais (2,2 vezes). A perigosa vale cerca de US$ 672, contra US$ 204
+    (3,3 vezes). Mesmo assim, as duas explicam pouco sozinhas: dentro de cada grupo, os valores vão de
+    US$ 1 a milhões, e os grupos se sobrepõem quase inteiramente.
+  - **Os preditores não se atrapalham.** O teste de colinearidade (GVIF ajustado) deu no máximo 1,45,
+    para um limite de alerta de cerca de 2,2. Os pares mais parecidos são peso × modal (encomenda é
+    leve; trem e navio levam carga pesada) e distância × modal. Por isso, espera-se que o efeito do
+    modal encolha bastante quando o peso entrar no modelo.
+  - **Perto do peso de uma carreta cheia (35 a 60 mil lb), o valor se divide em dois grupos.** Entre
+    as remessas baratas (menos de US$ 2 mil), 72% são de mineração e 67% são cascalho e pedra britada.
+    Entre as caras (US$ 20 mil ou mais), a maioria vem da indústria. O ritmo com que o valor cresce
+    com o peso também muda de setor para setor: com 10% a mais de peso, o valor sobe cerca de 4% no
+    varejo e cerca de 7% na mineração.
+- **Decisões e por quê:**
+  - **resposta: logaritmo do valor** (opção 1 da ata), explorada primeiro. O valor vai de US$ 1 a
+    milhões, e em log ele se relaciona quase em linha reta com o peso;
+  - **sem o fator de ponderação** (ata de 15/11): os coeficientes descrevem a amostra, e o texto vai
+    dizer isso;
+  - **fora as linhas com mercadoria escondida e com modal desconhecido** (ata de 15/11). A retirada
+    pelo próprio cliente (113) fica, porque é frequente;
+  - **modal em 6 famílias** (grupo, 21/11). Ferrovia, hidrovia, duto e outros viraram um grupo só.
+    Separados, teriam cerca de 280, 15, 29 e 0 linhas na amostra, e seus coeficientes sairiam
+    instáveis. Juntar não custou poder de explicação (η² continua 0,22);
+  - **setor pelo `SECTOR`, com os 7 setores** (grupo, 21/11). O tipo de mercadoria (SCTG) tem 49
+    códigos e precisaria de agrupamento;
+  - **interação peso × setor só se o diagnóstico pedir** (grupo, 21/11). A interação deixaria cada
+    setor ter o próprio ritmo de crescimento do valor com o peso. O modelo ampliado entra sem ela; se
+    os resíduos mostrarem padrão por setor, ela vira a modificação do modelo (item 4.1 do enunciado).
+    Com 37 milhões de linhas, qualquer termo sai "significativo", então quem decide é o ganho real;
+  - **distância em log: recomendação, a confirmar em 22/11.** Em km, a maior parte das remessas fica
+    espremida perto de zero, e a associação descontado o peso é mais forte em log (+0,19 contra
+    +0,12).
+- **O que mudou:** nada na base tratada. O script é novo e só lê a base. Os quartis dos gráficos
+  são aproximados, porque os exatos por categoria passavam do limite de memória das máquinas de 4 GB.
+  Com eles, o pico ficou em 1,07 GB.
+- **Como continuar:**
+  - `Rscript scripts/20_checkin3_exploracao_linear.R` gera tudo de novo em cerca de 50 s;
+  - os próximos passos são:
+    1. passar a semente e o tamanho da amostra para o `config.yml`;
+    2. separar treino e teste uma única vez;
+    3. ajustar o modelo inicial (sugestão: peso, modal e setor) e o ampliado, com os seis
+       preditores;
+    4. seguir com diagnóstico, modificação, comparação e predição.
+
 ---
 
 ## 4. Instalação e uso
@@ -948,6 +1053,14 @@ para o Git.
 | **Hash** | Uma "impressão digital" de um arquivo: muda se qualquer caractere do arquivo mudar |
 | **CV** | Coeficiente de variação. Mede quão incerta é uma estimativa; quanto maior, menos confiável |
 | **GVF** | Método oficial do guia para calcular o CV sem refazer o sorteio |
+| **Regressão linear múltipla** | Modelo que prevê um número (aqui, o log do valor) a partir de vários preditores ao mesmo tempo |
+| **ln / log** | Logaritmo. Transforma "dobrar" em "somar um passo", o que alinha variáveis que vão de 1 a milhões |
+| **Correlação (r)** | Mede de −1 a 1 quanto dois números andam juntos em linha reta; r² é a parte da variação explicada |
+| **η² (eta ao quadrado)** | O equivalente do r² para uma variável de categorias: quanto da variação as categorias explicam sozinhas |
+| **Correlação parcial** | A correlação entre duas variáveis depois de descontar uma terceira (aqui, o peso da carga) |
+| **Valor típico (média geométrica)** | A média calculada em log e voltada para dólares; fica perto da mediana e não é puxada pelos valores extremos |
+| **Colinearidade / GVIF** | Quando preditores se parecem demais, o modelo não sabe a quem dar o mérito. O GVIF mede quanto a incerteza de cada coeficiente aumenta por isso; 1 é o ideal |
+| **Interação** | Termo que deixa o efeito de um preditor mudar conforme outro (ex.: o peso pesar mais no valor em um setor do que em outro) |
 
 ---
 
