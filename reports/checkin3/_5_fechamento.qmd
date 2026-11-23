@@ -1,0 +1,13 @@
+<!-- Seções 7 e 8. Responsável: (a preencher). -->
+
+# Seção 7 — Problemas e limitações
+
+```{r}
+em_construcao()
+```
+
+# Seção 8 — O que aprendemos
+
+```{r}
+em_construcao()
+```

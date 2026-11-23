@@ -1,0 +1,55 @@
+<!-- Seção 1. Texto livre para editar; os números vêm dos atalhos do setup em checkin3.qmd. -->
+
+# Seção 1 — Perguntas e base de modelagem
+
+## As duas perguntas
+
+| Parte | Pergunta | Resposta (variável) |
+|---|---|---|
+| A — linear múltipla | O que o setor, o modal, a distância, a periculosidade e a temperatura acrescentam ao peso para explicar o **valor** de uma remessa? | `ln_valor`: logaritmo do valor (US\$) |
+| B — logística | Do que depende o remetente despachar **de caminhão**? | `caminhao`: Sim (caminhão próprio ou contratado) ou Não |
+
+O valor entra em logaritmo porque é muito assimétrico: vai de US\$ 1 a centenas de milhões, e a
+média fica longe da remessa típica. Na Parte B, a retirada pelo cliente conta como **Não**: o
+veículo é do cliente e o arquivo não diz qual é.
+
+## A base
+
+- **População:** as `r n_fmt(bm$populacao$linhas)` linhas da base tratada sem mercadoria
+  suprimida ou em faixa (SCTG colapsado) e sem modal desconhecido. Ficam fora
+  `r n_fmt(bm$populacao$fora)` linhas, e não há ausentes nas variáveis dos modelos
+  (`r n_fmt(bm$populacao$ausentes)`).
+- **Amostra:** `r n_fmt(bm$modelagem$tamanho_amostra)` linhas sorteadas ao acaso no DuckDB, com
+  semente `r bm$modelagem$semente` (no `config.yml`). A mesma amostra serve às Partes A e B.
+- **Treino e teste:** uma única divisão, `r pct1(100 * bm$modelagem$prop_treino, 0)` para treino,
+  com `set.seed()` (mesma semente) e `rsample::initial_split()` estratificado pela resposta
+  da Parte B, para que a proporção de caminhão seja a mesma nas duas partes.
+
+```{r}
+#| label: tab-partes
+bm$resumo |>
+  dplyr::transmute(Parte = c(treino = "Treino", teste = "Teste")[parte], Linhas = linhas,
+                   `De caminhão` = pct1(pct_caminhao), `Média de ln(valor)` = num(media_ln_valor),
+                   `Média de ln(peso)` = num(media_ln_peso)) |>
+  tabela(caption = "Treino e teste", align = "lrrrr")
+```
+
+Todos os modelos deste documento usam as `r n_fmt(parte("treino", "linhas"))` linhas do treino
+(`nobs()` de cada modelo nas Seções 2 e 4).
+
+## Os preditores
+
+```{r}
+#| label: tab-preditores
+bm$preditores |>
+  dplyr::transmute(Variável = paste0("`", variavel, "`"), Descrição = descricao, Tipo = tipo,
+                   Unidade = unidade, Referência = referencia) |>
+  tabela(caption = "Variáveis dos modelos")
+```
+
+- **Referências:** a categoria mais frequente de cada variável. Cada coeficiente categórico compara
+  com ela.
+- **Modal:** ferrovia, hidrovia, duto e outros formam um grupo só; separados, teriam poucas dezenas
+  de linhas na amostra.
+- **Fora dos modelos:** a razão valor/peso e o valor-teto, porque são derivados da própria
+  resposta. O modal não entra na Parte B, porque ele é a resposta dela.

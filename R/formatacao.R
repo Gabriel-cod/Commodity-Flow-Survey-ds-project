@@ -19,3 +19,7 @@ tabela <- function(df, ..., caption = NULL) {
                     COR[["secundario"]], gsub('(["\\\\])', "\\\\\\1", caption))
   structure(c("", titulo, "", t), format = "pipe", class = "knitr_kable")
 }
+
+# Valor-p legivel: com n grande quase todos ficam abaixo de 0,001. Espaco
+# inquebravel para o "<" nao ficar sozinho numa linha da tabela.
+p_fmt <- function(p) vapply(p, function(x) if (x < 0.001) "<\u00a00,001" else n_fmt(x, 3), "")

@@ -1,0 +1,94 @@
+<!-- Parte B1 (Seção 5, logística simples). Responsável: Mirella.
+     Texto livre para editar; os números vêm dos atalhos do setup em checkin3.qmd. -->
+
+# Seção 5 — Regressão logística: de caminhão ou não?
+
+## A resposta
+
+- **`caminhao` = Sim** quando a remessa saiu de caminhão próprio ou contratado (`MODE` 111 ou
+  112); **Não** em qualquer outro modal, inclusive a retirada pelo cliente (113), em que o veículo
+  é do cliente e não se sabe qual é.
+- É um fator com os níveis `Não` e `Sim`, nessa ordem: o `glm` modela a probabilidade do segundo
+  nível, **Sim**.
+- Saem de caminhão `r pct1(evento_b1("treino"))` das remessas do treino e
+  `r pct1(evento_b1("teste"))` das do teste (a divisão foi estratificada por `caminhao`). As duas
+  classes têm quase o mesmo tamanho.
+
+## O modelo simples: só o peso
+
+O modelo é `caminhao ~ ln_peso`, ajustado nas `r n_fmt(b1$ajuste$n)` remessas do treino.
+
+```{r}
+#| label: tab-b1-coeficientes
+b1$coeficientes |>
+  dplyr::transmute(Termo = rotulo, `Coeficiente (logit)` = num(estimate, 3), EP = num(std.error, 4),
+                   z = num(statistic, 1), p = p_fmt(p.value), `Razão de chances` = num(rc, 3),
+                   `IC 95% (RC)` = paste0(num(rc_inf, 3), " a ", num(rc_sup, 3))) |>
+  tabela(caption = "Logística simples: coeficientes e razões de chances (treino)", align = "lrrrrrr")
+```
+
+- **Peso.** Cada unidade a mais em ln(peso), ou seja, o peso multiplicado por *e* ≈ 2,72,
+  multiplica a chance de sair de caminhão por `r num(coef_b1("ln_peso", "rc"))`
+  (IC 95%: `r num(coef_b1("ln_peso", "rc_inf"))`; `r num(coef_b1("ln_peso", "rc_sup"))`). Numa
+  conta mais fácil de imaginar: **dobrar o peso multiplica a chance de sair de caminhão por
+  `r num(b1$rc_dobro$rc)`** (IC 95%: `r num(b1$rc_dobro$rc_inf)`; `r num(b1$rc_dobro$rc_sup)`).
+- **Intercepto.** É a chance para ln(peso) = 0, uma remessa de 1 libra:
+  `r num(coef_b1("(Intercept)", "rc"), 3)`, o que dá probabilidade de
+  `r pct1(100 * dobra_b1(1, "prob"), 0)`.
+- **Ajuste.** O peso reduz a deviance de `r n_fmt(b1$ajuste$deviance_nula)` (modelo só com o
+  intercepto) para `r n_fmt(b1$ajuste$deviance)`, `r pct1(100 * b1$ajuste$pseudo_r2, 0)` a menos
+  (pseudo-R² de McFadden); o AIC é `r n_fmt(b1$ajuste$aic)`. O z de
+  `r num(coef_b1("ln_peso", "statistic"), 0)` mostra que o efeito do peso não é acaso, mas sozinho
+  ele deixa de fora três quartos da deviance.
+
+## Chance não é probabilidade
+
+A razão de chances é a mesma em qualquer peso; o salto na probabilidade, não.
+
+```{r}
+#| label: tab-b1-dobra
+b1$dobra |>
+  dplyr::transmute(`Peso (lb)` = paste(n_fmt(peso_lb), "→", n_fmt(peso_dobro_lb)),
+                   Chance = paste(num(chance), "→", num(chance_dobro)),
+                   Probabilidade = paste(pct1(100 * prob), "→", pct1(100 * prob_dobro)),
+                   `Diferença (p.p.)` = paste0("+", num(dif_pp, 1))) |>
+  tabela(caption = "Dobrar o peso em três pontos da curva", align = "lrrr")
+```
+
+- Em todas as linhas a chance é multiplicada por `r num(b1$rc_dobro$rc)`.
+- A probabilidade sobe `r num(dobra_b1(1, "dif_pp"), 1)` p.p. a partir de 1 libra,
+  `r num(dobra_b1(2, "dif_pp"), 1)` p.p. perto do meio da curva (20 libras, onde a probabilidade
+  está perto de 50%) e só `r num(dobra_b1(3, "dif_pp"), 1)` p.p. a partir de 2 mil libras, onde
+  ela já passa de 85%.
+- Na média das remessas do treino, dobrar o peso soma
+  `r num(b1$efeito_medio$pp, 1)` p.p. à probabilidade de sair de caminhão (IC 95%:
+  `r num(b1$efeito_medio$pp_inf, 1)`; `r num(b1$efeito_medio$pp_sup, 1)`; `marginaleffects`).
+
+## Onde o modelo simples falha
+
+```{r}
+#| label: fig-b1-curva
+#| fig-height: 3.8
+gb1$curva
+```
+
+A curva logística só pode subir com o peso; os dados, não.
+
+- **Cargas leves.** Nas remessas de 1 libra, só `r pct1(100 * faixa_b1("(0,1]", "observada"), 0)`
+  saem de caminhão, contra `r pct1(100 * faixa_b1("(0,1]", "prevista"), 0)` previstos.
+- **Cargas médias.** Entre 200 e 2 mil libras, a proporção observada passa de 94%, e a curva fica
+  entre `r pct1(100 * faixa_b1("(200,500]", "prevista"), 0)` e
+  `r pct1(100 * faixa_b1("(1000,2000]", "prevista"), 0)`: o modelo subestima o caminhão.
+- **Cargas muito pesadas.** Acima de 10 mil libras a proporção observada **cai**:
+  `r pct1(100 * faixa_b1("(10000,50000]", "observada"), 0)` entre 10 mil e 50 mil libras e
+  `r pct1(100 * faixa_b1("(50000,Inf]", "observada"), 0)` acima de 50 mil, enquanto o modelo prevê
+  `r pct1(100 * faixa_b1("(10000,50000]", "prevista"), 0)` e
+  `r pct1(100 * faixa_b1("(50000,Inf]", "prevista"), 0)`. Acima de 50 mil libras, a ferrovia,
+  hidrovia e duto levam `r pct1(pesada_b1("(50000,Inf]", "Ferrovia, hidrovia, duto e outros"))` das
+  remessas e o multimodal, `r pct1(pesada_b1("(50000,Inf]", "Multimodal"))` (entre 10 mil e 50 mil
+  libras, `r pct1(pesada_b1("(10000,50000]", "Ferrovia, hidrovia, duto e outros"))` e
+  `r pct1(pesada_b1("(10000,50000]", "Multimodal"))`). A retirada pelo cliente fica perto de
+  `r pct1(pesada_b1("(50000,Inf]", "Retirada pelo cliente"), 0)` nas duas faixas.
+
+O peso sozinho já separa bem as remessas leves das pesadas, mas erra nas pontas. A logística
+múltipla, a seguir, acrescenta distância, valor, setor, carga perigosa e temperatura.
