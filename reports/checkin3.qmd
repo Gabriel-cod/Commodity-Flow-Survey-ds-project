@@ -37,6 +37,7 @@ source(here::here("scripts", "02_trata_base.R"))
 source(here::here("scripts", "25_resultados_checkin3.R"))
 source(here::here("scripts", "22_parte_a_linear.R"))
 source(here::here("scripts", "23_parte_b1_logistica_simples.R"))
+source(here::here("scripts", "24_parte_b2_logistica_multipla.R"))
 registrar_fontes_cfs()
 
 base <- suppressMessages(obter_base_tratada(pipeline = FALSE))
@@ -48,6 +49,8 @@ a <- res$parte_a
 ga <- graficos_parte_a(a, bm)
 b1 <- res$parte_b1
 gb1 <- graficos_parte_b1(b1, bm)
+b2 <- res$parte_b2
+gb2 <- graficos_parte_b2(b2, bm)
 
 # Atalhos do texto
 num <- function(x, d = 2) n_fmt(x, d)
@@ -67,6 +70,16 @@ evento_b1 <- function(nome, coluna = "pct_sim") b1$evento[[coluna]][b1$evento$pa
 dobra_b1 <- function(i, coluna) b1$dobra[[coluna]][i]
 faixa_b1 <- function(rotulo, coluna) b1$faixas[[coluna]][b1$faixas$faixa == rotulo]
 pesada_b1 <- function(faixa, modal) b1$pesadas$pct[b1$pesadas$faixa == faixa & b1$pesadas$modal == modal]
+coef_b2 <- function(termo, coluna = "rc") b2$coeficientes[[coluna]][b2$coeficientes$term == termo]
+# Razao de chances ao dobrar uma variavel em log: RC^log(2).
+dobro_b2 <- function(termo, coluna = "rc") coef_b2(termo, coluna)^log(2)
+ajuste_b2 <- function(modelo, coluna) b2$ajuste[[coluna]][b2$ajuste$modelo == modelo]
+jornal_b2 <- function(termo, coluna) b2$jornal[[coluna]][b2$jornal$term == termo]
+perfil_b2 <- function(i, coluna) b2$perfis[[coluna]][i]
+efeito_b2 <- function(nome, coluna = "pp") b2$efeito_medio[[coluna]][b2$efeito_medio$efeito == nome]
+matriz_b2 <- function(coluna, limiar = "padrao") b2$matrizes[[coluna]][b2$matrizes$limiar_nome == limiar]
+metrica_b2 <- function(coluna, classificador = "padrao") b2$metricas[[coluna]][b2$metricas$classificador == classificador]
+auc_b2 <- function(nome) b2$auc$.estimate[b2$auc$parte == nome]
 
 # Bloco Typst cru: o knitr nao avalia codigo dentro dele.
 typst <- function(...) knitr::asis_output(paste0("\n```{=typst}\n", paste0(...), "\n```\n"))

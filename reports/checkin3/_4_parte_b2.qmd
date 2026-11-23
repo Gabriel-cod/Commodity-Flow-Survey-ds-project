@@ -3,12 +3,179 @@
 
 ## Logística múltipla
 
+O modelo múltiplo acrescenta ao peso a distância, o valor, o setor, a carga perigosa e a
+temperatura controlada: `caminhao ~ ln_peso + ln_dist + ln_valor + setor + perigosa + temperatura`,
+no mesmo treino. A referência do setor é o comércio atacadista, o mais frequente.
+
 ```{r}
-em_construcao()
+#| label: tab-b2-coeficientes
+b2$coeficientes |>
+  dplyr::transmute(Termo = rotulo, `Razão de chances` = num(rc, 3),
+                   `IC 95%` = paste0(num(rc_inf, 3), " a ", num(rc_sup, 3)), z = num(statistic, 1),
+                   p = p_fmt(p.value)) |>
+  tabela(caption = "Logística múltipla: razões de chances (treino)", align = "lrrrr")
 ```
+
+- **Ajuste.** A deviance cai de `r n_fmt(ajuste_b2("simples", "deviance"))` (só o peso) para
+  `r n_fmt(ajuste_b2("multipla", "deviance"))`, e o pseudo-R² de McFadden sobe de
+  `r num(ajuste_b2("simples", "pseudo_r2"))` para `r num(ajuste_b2("multipla", "pseudo_r2"))`. O
+  teste da razão de verossimilhança entre os dois (χ² = `r n_fmt(ajuste_b2("multipla", "qui2_rv"))`
+  com `r ajuste_b2("multipla", "gl_rv")` graus de liberdade, p `r p_fmt(ajuste_b2("multipla", "p_rv"))`)
+  e o AIC (`r n_fmt(ajuste_b2("simples", "aic"))` → `r n_fmt(ajuste_b2("multipla", "aic"))`)
+  preferem o múltiplo.
+
+**Quatro razões de chances,** mantidos fixos os demais preditores:
+
+1. **Peso.** Cada unidade a mais em ln(peso) multiplica a chance de sair de caminhão por
+   `r num(coef_b2("ln_peso"))` (IC 95%: `r num(coef_b2("ln_peso", "rc_inf"))`;
+   `r num(coef_b2("ln_peso", "rc_sup"))`). Dobrar o peso multiplica a chance por
+   `r num(dobro_b2("ln_peso"))`.
+2. **Distância.** Dobrar a distância multiplica a chance de sair de caminhão por
+   `r num(dobro_b2("ln_dist"))` (IC 95%: `r num(dobro_b2("ln_dist", "rc_inf"))`;
+   `r num(dobro_b2("ln_dist", "rc_sup"))`): `r pct1(100 * (1 - dobro_b2("ln_dist")), 0)` a menos.
+3. **Temperatura controlada** (categórica). A chance de sair de caminhão para uma carga com
+   temperatura controlada é `r num(coef_b2("temperaturaSim"))` vezes a chance para uma sem controle
+   (IC 95%: `r num(coef_b2("temperaturaSim", "rc_inf"))`; `r num(coef_b2("temperaturaSim", "rc_sup"))`).
+4. **Setor** (categórica). A chance de sair de caminhão para uma remessa do comércio varejista é
+   `r num(coef_b2("setorComércio varejista"))` vezes a chance para uma do comércio atacadista
+   (IC 95%: `r num(coef_b2("setorComércio varejista", "rc_inf"))`;
+   `r num(coef_b2("setorComércio varejista", "rc_sup"))`). Na mineração, com o mesmo peso, a razão é
+   `r num(coef_b2("setorMineração e extração"), 3)`.
+
+## Chance não é probabilidade
+
+```{r}
+#| label: tab-b2-perfis
+b2$perfis |>
+  dplyr::transmute(Perfil = perfil,
+                   Remessa = sprintf("%s lb, %s km, US\\$ %s%s", n_fmt(peso_lb), n_fmt(dist_km), n_fmt(valor_usd),
+                                     ifelse(temperatura == "Sim", ", temperatura controlada", "")),
+                   Probabilidade = sprintf("%s (%s a %s)", pct1(100 * prob), pct1(100 * prob_inf), pct1(100 * prob_sup)),
+                   `Peso dobrado (p.p.)` = paste0("+", num(dobra_pp, 1))) |>
+  tabela(caption = "Probabilidade de sair de caminhão em três perfis (IC 95%) e o salto ao dobrar o peso",
+         align = "llrr")
+```
+
+- Nos três perfis, dobrar o peso multiplica a chance pelo mesmo `r num(dobro_b2("ln_peso"))`.
+- Na probabilidade, o salto é de `r num(perfil_b2(1, "dobra_pp"), 1)` p.p. na encomenda do varejo,
+  que parte de `r pct1(100 * perfil_b2(1, "prob"))`; de `r num(perfil_b2(2, "dobra_pp"), 1)` p.p.
+  na carga da indústria, perto do meio da curva; e de só `r num(perfil_b2(3, "dobra_pp"), 1)` p.p.
+  no atacado com temperatura controlada, que já está em `r pct1(100 * perfil_b2(3, "prob"))`.
+- Na média das remessas do treino, dobrar o peso soma `r num(efeito_b2("peso_dobro"), 1)` p.p. e a
+  temperatura controlada, `r num(efeito_b2("temperatura"), 0)` p.p. (`marginaleffects`).
+
+## O peso no modelo simples e no múltiplo
+
+```{r}
+#| label: tab-b2-jornal
+b2$jornal |>
+  dplyr::transmute(Variável = rotulo, Sozinha = num(rc_sozinha), `No múltiplo` = num(rc_multipla)) |>
+  tabela(caption = "Razão de chances com a variável sozinha e no modelo múltiplo", align = "lrr")
+```
+
+- **Peso, o preditor principal:** a razão de chances quase não muda
+  (`r num(jornal_b2("ln_peso", "rc_sozinha"))` → `r num(jornal_b2("ln_peso", "rc_multipla"))`). A
+  associação marginal e a condicional contam a mesma história.
+- **Valor e carga perigosa trocam de lado**, como os estudantes do ISLR (4.3.4). Sozinhos, aumentam a
+  chance de sair de caminhão; com o peso no modelo, diminuem. As duas andam com o peso: a correlação
+  entre ln(valor) e ln(peso) é `r num(b2$cor_valor_peso)`, e a carga perigosa pesa, em média,
+  `r n_fmt(a$correlacoes$razao_peso_perigosa)` vezes mais que a não perigosa (Seção 2). Sozinhas,
+  elas carregam o efeito do peso.
 
 # Seção 6 — O classificador no teste
 
+Cada remessa do teste recebe a probabilidade prevista pelo modelo múltiplo. Com o limiar 0,5, ela é
+classificada como "sai de caminhão" quando a probabilidade é de 0,5 ou mais.
+
 ```{r}
-em_construcao()
+#| label: tab-b2-matriz
+tibble::tibble(Previsto = c("Caminhão", "Não caminhão"),
+               `Saiu de caminhão` = c(paste("VP:", n_fmt(matriz_b2("vp"))), paste("FN:", n_fmt(matriz_b2("fn")))),
+               `Não saiu de caminhão` = c(paste("FP:", n_fmt(matriz_b2("fp"))), paste("VN:", n_fmt(matriz_b2("vn"))))) |>
+  tabela(caption = "Matriz de confusão no teste, limiar 0,5", align = "lrr")
 ```
+
+- **Verdadeiro positivo (VP):** saiu de caminhão e o modelo disse caminhão.
+- **Falso negativo (FN):** saiu de caminhão, mas o modelo disse que não.
+- **Falso positivo (FP):** o modelo disse caminhão, mas a remessa saiu por outro modal ou foi
+  retirada pelo cliente.
+- **Verdadeiro negativo (VN):** não saiu de caminhão e o modelo acertou.
+
+```{r}
+#| label: tab-b2-metricas
+nomes <- c(padrao = "Modelo, limiar 0,5", alternativo = "Modelo, limiar 0,4",
+           regua = "Régua: sempre \"não caminhão\"")
+b2$metricas |>
+  dplyr::transmute(Classificador = nomes[classificador], `Acurácia` = pct1(100 * accuracy),
+                   Sensibilidade = pct1(100 * sens), Especificidade = pct1(100 * spec),
+                   `Precisão` = ifelse(is.na(precision), "—", pct1(100 * precision))) |>
+  tabela(caption = "Métricas no teste", align = "lrrrr")
+```
+
+Nas explicações abaixo, os números são os do limiar 0,5; o limiar 0,4 é discutido em "Outro limiar".
+
+- **Acurácia:** o modelo classifica certo `r pct1(100 * metrica_b2("accuracy"))` das remessas.
+- **Sensibilidade:** das remessas que saíram de caminhão, reconhece
+  `r pct1(100 * metrica_b2("sens"))`.
+- **Especificidade:** das que não saíram de caminhão, reconhece `r pct1(100 * metrica_b2("spec"))`.
+- **Precisão:** quando diz "caminhão", acerta `r pct1(100 * metrica_b2("precision"))` das vezes.
+- **Régua mínima.** No treino, a classe mais frequente é "não caminhão". Quem sempre a prevê acerta
+  `r pct1(100 * metrica_b2("accuracy", "regua"))` do teste, mas não reconhece nenhuma remessa de
+  caminhão (sensibilidade 0). O modelo ganha
+  `r num(100 * (metrica_b2("accuracy") - metrica_b2("accuracy", "regua")), 0)` p.p. de acurácia e,
+  principalmente, passa a reconhecer o caminhão. Como as duas classes têm quase o mesmo tamanho, a
+  acurácia aqui não engana.
+
+## Outro limiar
+
+```{r}
+#| label: fig-b2-limiares
+#| fig-height: 3.6
+gb2$limiares
+```
+
+Baixar o limiar faz o modelo dizer "caminhão" mais vezes: a sensibilidade sobe e a especificidade
+cai. Subir faz o contrário.
+
+**O erro mais grave é o falso negativo.** Para quem planeja a frota, deixar de reconhecer uma
+remessa que sai de caminhão é deixar carga sem veículo; prever caminhão para uma carga que vai por
+outro modal custa menos. Por isso o grupo escolheu um limiar mais baixo, **0,4**: a remessa é
+classificada como "sai de caminhão" quando a probabilidade é de 0,4 ou mais.
+
+```{r}
+#| label: tab-b2-matriz-alternativo
+tibble::tibble(Previsto = c("Caminhão", "Não caminhão"),
+               `Saiu de caminhão` = c(paste("VP:", n_fmt(matriz_b2("vp", "alternativo"))),
+                                      paste("FN:", n_fmt(matriz_b2("fn", "alternativo")))),
+               `Não saiu de caminhão` = c(paste("FP:", n_fmt(matriz_b2("fp", "alternativo"))),
+                                          paste("VN:", n_fmt(matriz_b2("vn", "alternativo"))))) |>
+  tabela(caption = "Matriz de confusão no teste, limiar 0,4", align = "lrr")
+```
+
+- **Ganho.** Os falsos negativos caem de `r n_fmt(matriz_b2("fn"))` para
+  `r n_fmt(matriz_b2("fn", "alternativo"))`, e a sensibilidade sobe de
+  `r pct1(100 * metrica_b2("sens"))` para `r pct1(100 * metrica_b2("sens", "alternativo"))`.
+- **Perda.** Os falsos positivos sobem de `r n_fmt(matriz_b2("fp"))` para
+  `r n_fmt(matriz_b2("fp", "alternativo"))`: a especificidade cai de
+  `r pct1(100 * metrica_b2("spec"))` para `r pct1(100 * metrica_b2("spec", "alternativo"))` e a
+  precisão, de `r pct1(100 * metrica_b2("precision"))` para
+  `r pct1(100 * metrica_b2("precision", "alternativo"))`.
+- **Acurácia.** Fica em `r pct1(100 * metrica_b2("accuracy", "alternativo"))`, contra
+  `r pct1(100 * metrica_b2("accuracy"))` no limiar 0,5: trocamos falsos negativos por falsos
+  positivos quase um a um, e a troca vai na direção do erro que o grupo considera menos grave.
+
+## Curva ROC e AUC
+
+```{r}
+#| label: fig-b2-roc
+#| fig-height: 3.8
+#| dev.args: !expr list(bg = COR[["papel"]])
+gb2$roc
+```
+
+- A curva ROC mostra todos os limiares de uma vez: cada ponto é um par (falsos positivos,
+  sensibilidade).
+- A **AUC** é `r num(auc_b2("teste"), 3)` no teste: sorteando uma remessa que saiu de caminhão e uma
+  que não saiu, o modelo dá probabilidade maior à de caminhão em
+  `r pct1(100 * auc_b2("teste"), 0)` das vezes. Um classificador ao acaso teria 0,5.
+- No treino, a AUC é `r num(auc_b2("treino"), 3)`, praticamente igual: o modelo não decorou o treino.
