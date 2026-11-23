@@ -1,4 +1,4 @@
-<!-- Parte A (Seções 2 a 4): regressão linear múltipla. Responsável: (a preencher).
+<!-- Parte A (Seções 2 a 4): regressão linear múltipla. Responsável: Gustavo.
      Texto livre para editar; os números vêm dos atalhos do setup em checkin3.qmd. -->
 
 # Seção 2 — Regressão linear: modelos inicial e ampliado

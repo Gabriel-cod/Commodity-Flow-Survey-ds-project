@@ -36,6 +36,7 @@ suppressMessages(source(here::here("scripts", "00_setup.R")))
 source(here::here("scripts", "02_trata_base.R"))
 source(here::here("scripts", "25_resultados_checkin3.R"))
 source(here::here("scripts", "22_parte_a_linear.R"))
+source(here::here("scripts", "23_parte_b1_logistica_simples.R"))
 registrar_fontes_cfs()
 
 base <- suppressMessages(obter_base_tratada(pipeline = FALSE))
@@ -45,6 +46,8 @@ fechar_base(base)
 bm <- res$base_modelagem
 a <- res$parte_a
 ga <- graficos_parte_a(a, bm)
+b1 <- res$parte_b1
+gb1 <- graficos_parte_b1(b1, bm)
 
 # Atalhos do texto
 num <- function(x, d = 2) n_fmt(x, d)
@@ -59,6 +62,11 @@ coef_a <- function(termo, modelo = "ampliado", coluna = "estimate") {
 diag_a <- function(coluna, modelo = "ampliado") a$diagnostico_resumo[[coluna]][a$diagnostico_resumo$modelo == modelo]
 parte <- function(nome, coluna) bm$resumo[[coluna]][bm$resumo$parte == nome]
 perfil <- function(i, coluna) a$perfis[[coluna]][i]
+coef_b1 <- function(termo, coluna = "estimate") b1$coeficientes[[coluna]][b1$coeficientes$term == termo]
+evento_b1 <- function(nome, coluna = "pct_sim") b1$evento[[coluna]][b1$evento$parte == nome]
+dobra_b1 <- function(i, coluna) b1$dobra[[coluna]][i]
+faixa_b1 <- function(rotulo, coluna) b1$faixas[[coluna]][b1$faixas$faixa == rotulo]
+pesada_b1 <- function(faixa, modal) b1$pesadas$pct[b1$pesadas$faixa == faixa & b1$pesadas$modal == modal]
 
 # Bloco Typst cru: o knitr nao avalia codigo dentro dele.
 typst <- function(...) knitr::asis_output(paste0("\n```{=typst}\n", paste0(...), "\n```\n"))

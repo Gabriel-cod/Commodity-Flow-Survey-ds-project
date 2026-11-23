@@ -1,4 +1,4 @@
-<!-- Parte B2 (Seção 5, logística múltipla, e Seção 6). Responsável: (a preencher).
+<!-- Parte B2 (Seção 5, logística múltipla, e Seção 6). Responsável: Gabriel.
      Texto livre para editar; os números vêm dos atalhos do setup em checkin3.qmd. -->
 
 ## Logística múltipla
