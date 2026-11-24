@@ -1,13 +1,54 @@
-<!-- Seções 7 e 8. Responsável: (a preencher). -->
+<!-- Seções 7 e 8. Rascunho do agente, aprovado pelo Gabriel em 23/11; o grupo comenta na PR.
+     Texto livre para editar; os números vêm dos atalhos do setup em checkin3.qmd. -->
 
 # Seção 7 — Problemas e limitações
 
-```{r}
-em_construcao()
-```
+- **Os modelos descrevem a amostra, não os EUA.** Nenhum modelo usa o `WGT_FACTOR`. Reajustado com
+  o fator, o modelo final muda bastante: o efeito do aéreo cai de
+  `r num(pond_a("Modal: Aéreo", "sem_fator"))` para `r num(pond_a("Modal: Aéreo", "com_fator"))`
+  (Apêndice). Para falar das remessas reais seria preciso um modelo pensado para pesos amostrais.
+- **Erros-padrão otimistas.** O Census sorteia estabelecimentos, e remessas do mesmo remetente se
+  parecem. Sem um identificador do remetente, não dá para corrigir: os intervalos dos coeficientes
+  devem ser mais estreitos do que deveriam.
+- **Caudas pesadas.** Os resíduos da Parte A têm curtose `r num(diag_a("curtose"), 1)`, e
+  `r n_fmt(diag_a("studentizado_3"))` remessas passam de 3 desvios. Elas ficaram no modelo, mas os
+  intervalos de predição ficam otimistas nas pontas.
+- **Ordem de grandeza, não preço.** O modelo final (o modificado, da Seção 4) explica
+  `r pct1(100 * ajuste("modificado", "r2"), 0)` da variação de ln(valor); uma remessa típica fica
+  entre 1/`r num(exp(ajuste("modificado", "rse")), 1)` e `r num(exp(ajuste("modificado", "rse")), 1)`
+  vezes o valor previsto (no ampliado da Seção 3, o fator é
+  `r num(exp(ajuste("ampliado", "rse")), 1)`).
+- **A logística só sobe com o peso.** Os dados não: acima de 50 mil libras só
+  `r pct1(100 * faixa_b1("(50000,Inf]", "observada"), 0)` saem de caminhão, e o modelo simples prevê
+  `r pct1(100 * faixa_b1("(50000,Inf]", "prevista"), 0)`. Nenhum dos dois modelos tem um termo para
+  essa queda.
+- **O "Não caminhão" é quase todo encomenda.** No treino, `r pct1(nao_b2("Encomenda"), 0)` das
+  remessas que não saem de caminhão são encomendas (`r n_fmt(nao_b2("Encomenda", "linhas"))` de
+  `r n_fmt(sum(b2$nao_por_modal$linhas))`). Por isso o peso sozinho já dá AUC de
+  `r num(b2$auc_simples, 3)` no teste, contra `r num(auc_b2("teste"), 3)` do modelo múltiplo: o
+  classificador separa sobretudo o caminhão do pacote leve. Sobre ferrovia, aéreo e multimodal, que
+  somam `r pct1(nao_b2("Ferrovia, hidrovia, duto e outros") + nao_b2("Aéreo") + nao_b2("Multimodal"), 1)`
+  do "Não", ele diz pouco; o resto é retirada pelo cliente
+  (`r pct1(nao_b2("Retirada pelo cliente"), 0)`).
+- **O limiar é uma escolha de custo.** O 0,4 vem do julgamento do grupo de que o falso negativo é
+  mais grave; o arquivo não traz o custo real de cada erro, e outro uso pediria outro limiar.
+- **Uma divisão só.** Treino e teste foram sorteados uma vez. Com 70 mil e 30 mil linhas, a
+  diferença entre treino e teste é pequena, mas não há validação cruzada.
 
 # Seção 8 — O que aprendemos
 
-```{r}
-em_construcao()
-```
+1. **O peso explica quase tudo.** Sozinho com o modal e o setor, ele leva o modelo inicial a
+   `r pct1(100 * ajuste("inicial", "r2"), 0)` da variação de ln(valor); na logística, dá AUC de
+   `r num(b2$auc_simples, 2)`. As outras variáveis refinam, mas não mudam a história.
+2. **O sinal de uma variável sozinha engana.** A distância, a carga perigosa e a temperatura trocam
+   de sinal quando o peso entra na regressão linear; o valor e a carga perigosa trocam de lado na
+   logística. Antes de interpretar um coeficiente, é preciso ver com quem a variável anda.
+3. **Com muitas linhas, o valor-p não decide.** Quase todo coeficiente sai "significativo"; quem
+   decide é o tamanho do efeito e o erro em remessas que o modelo não viu.
+4. **Chance não é probabilidade.** Dobrar o peso multiplica a chance pelo mesmo número em qualquer
+   remessa, mas soma de `r num(perfil_b2(3, "dobra_pp"), 1)` a `r num(perfil_b2(2, "dobra_pp"), 1)`
+   pontos percentuais à probabilidade, conforme o ponto da curva.
+5. **Um classificador precisa de régua e de custo.** A acurácia só tem sentido contra a régua da
+   classe mais frequente, e o limiar depende de qual erro custa mais.
+6. **Uma AUC alta pede a pergunta "contra quem?".** Aqui ela mede, sobretudo, a separação entre
+   caminhão e encomenda, que o peso já faz quase sozinho.
