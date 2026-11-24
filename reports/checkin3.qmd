@@ -80,6 +80,8 @@ efeito_b2 <- function(nome, coluna = "pp") b2$efeito_medio[[coluna]][b2$efeito_m
 matriz_b2 <- function(coluna, limiar = "padrao") b2$matrizes[[coluna]][b2$matrizes$limiar_nome == limiar]
 metrica_b2 <- function(coluna, classificador = "padrao") b2$metricas[[coluna]][b2$metricas$classificador == classificador]
 auc_b2 <- function(nome) b2$auc$.estimate[b2$auc$parte == nome]
+pond_a <- function(rotulo, coluna) a$ponderado[[coluna]][a$ponderado$rotulo == rotulo]
+nao_b2 <- function(modal, coluna = "pct") b2$nao_por_modal[[coluna]][b2$nao_por_modal$modal == modal]
 
 # Bloco Typst cru: o knitr nao avalia codigo dentro dele.
 typst <- function(...) knitr::asis_output(paste0("\n```{=typst}\n", paste0(...), "\n```\n"))
@@ -103,6 +105,11 @@ typst(
   numero(n_fmt(bm$modelagem$tamanho_amostra), "remessas sorteadas para modelar, 70% treino e 30% teste"), ",\n",
   numero(pct1(100 * ajuste("modificado", "r2"), 0), "da variação de ln(valor) explicada pelo modelo final da Parte A", TRUE), ",\n",
   numero(paste0("+", pct1(efeito_pct(coef_a("ln_peso") * log(2)), 0)), "de valor quando o peso dobra, com o resto igual"), ",\n",
+  numero(num(auc_b2("teste"), 3), "de AUC no teste: o modelo da Parte B separa bem caminhão de não caminhão", TRUE), ",\n",
+  numero(pct1(100 * metrica_b2("sens", "alternativo"), 0), "das remessas de caminhão reconhecidas com o limiar 0,4"), ",\n",
+  numero(pct1(100 * metrica_b2("accuracy", "alternativo"), 0),
+         paste0("de acerto com o limiar 0,4, contra ", pct1(100 * metrica_b2("accuracy", "regua"), 0),
+                " de quem chuta sempre a classe mais comum")), ",\n",
   ")"
 )
 ```

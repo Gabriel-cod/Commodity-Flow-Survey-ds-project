@@ -5,7 +5,7 @@
 
 FORMULA_B2 <- caminhao ~ ln_peso + ln_dist + ln_valor + setor + perigosa + temperatura
 
-# Perfis bem diferentes para o ponto 5.5 (a validar pelo grupo).
+# Perfis bem diferentes para o ponto 5.5 (nomes mantidos pelo Gabriel em 23/11).
 PERFIS_B2 <- tibble::tribble(
   ~perfil,                                ~peso_lb, ~dist_km, ~valor_usd, ~setor,                       ~perigosa, ~temperatura,
   "Encomenda do varejo",                  5,        1500,     100,        "Comércio varejista",         "Não",     "Não",
@@ -48,6 +48,14 @@ calcular_parte_b2 <- function(dados, res = NULL) {
     metricas = .metricas_b2(prev$teste),
     limiares = .desempenho_limiares(prev$teste),
     auc = purrr::map_dfr(prev, .id = "parte", ~ yardstick::roc_auc(.x, caminhao, prob, event_level = "second")),
+    # Limitacao da secao 7: quanto da AUC o peso sozinho ja da, no mesmo teste.
+    auc_simples = yardstick::roc_auc(tibble::tibble(caminhao = teste$caminhao,
+                                                    prob = unname(stats::predict(simples, teste, type = "response"))),
+                                     caminhao, prob, event_level = "second")$.estimate,
+    # De que modal e o "Nao" do treino: mostra contra quem o caminhao e separado.
+    nao_por_modal = dplyr::count(dplyr::filter(treino, caminhao == "Não"), modal, name = "linhas") |>
+      dplyr::mutate(pct = 100 * linhas / sum(linhas)) |>
+      dplyr::arrange(dplyr::desc(linhas)),
     roc = purrr::map_dfr(prev, .id = "parte", .curva_roc)
   )
 }

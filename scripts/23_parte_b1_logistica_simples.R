@@ -105,7 +105,7 @@ graficos_parte_b1 <- function(res_b1, base_modelagem) {
   faixas <- dplyr::mutate(res_b1$faixas, ln_peso = log(peso_medio_lb))
   list(
     curva = ggplot2::ggplot(res_b1$curva, ggplot2::aes(ln_peso, 100 * prob)) +
-      ggplot2::geom_line(colour = COR[["marinho"]], linewidth = 0.8) +
+      ggplot2::geom_line(colour = COR[["marinho"]], linewidth = 1) +
       ggplot2::geom_point(data = faixas, ggplot2::aes(y = 100 * observada, size = n),
                           colour = COR[["laranja"]], alpha = 0.85) +
       ggplot2::scale_size_area(max_size = 5, guide = "none") +

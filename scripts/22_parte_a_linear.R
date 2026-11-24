@@ -154,8 +154,8 @@ graficos_parte_a <- function(res_a, base_modelagem) {
   pontos <- function(...) ggplot2::geom_point(alpha = 0.05, size = 0.5, colour = COR[["marinho"]], shape = 16, ...)
   faixas <- function(dados, x, y) {
     m <- medias_faixa(dados, x, y)
-    list(ggplot2::geom_line(data = m, ggplot2::aes(x, y), colour = COR[["laranja"]], linewidth = 0.7),
-         ggplot2::geom_point(data = m, ggplot2::aes(x, y), colour = COR[["laranja"]], size = 1.1))
+    list(ggplot2::geom_line(data = m, ggplot2::aes(x, y), colour = COR[["laranja"]], linewidth = 0.9),
+         ggplot2::geom_point(data = m, ggplot2::aes(x, y), colour = COR[["laranja"]], size = 1.4))
   }
 
   list(
@@ -172,10 +172,14 @@ graficos_parte_a <- function(res_a, base_modelagem) {
 
     qq = .grafico_qq(d$padronizado, rodape),
 
-    alavancagem = ggplot2::ggplot(d, ggplot2::aes(alavancagem, studentizado)) +
-      ggplot2::geom_point(ggplot2::aes(colour = cook > 4 / resumo$n), alpha = 0.25, size = 0.6, shape = 16) +
-      ggplot2::scale_colour_manual(values = c(`FALSE` = COR[["rotulo"]], `TRUE` = COR[["laranja"]]),
-                                   labels = c("Cook ≤ 4/n", "Cook > 4/n"), name = NULL) +
+    # Contraste (pedido do Gustavo, 23/11): o comum em cinza claro embaixo, o
+    # destaque em laranja cheio por cima; a legenda mostra a cor sem a transparencia.
+    alavancagem = ggplot2::ggplot(d, ggplot2::aes(alavancagem, studentizado, colour = cook > 4 / resumo$n)) +
+      ggplot2::geom_point(data = function(x) dplyr::filter(x, cook <= 4 / resumo$n), alpha = 0.2, size = 0.5, shape = 16) +
+      ggplot2::geom_point(data = function(x) dplyr::filter(x, cook > 4 / resumo$n), alpha = 0.6, size = 0.7, shape = 16) +
+      ggplot2::scale_colour_manual(values = c(`FALSE` = RAMPA_SEQUENCIAL[[3]], `TRUE` = COR[["laranja"]]),
+                                   labels = c("Cook ≤ 4/n", "Cook > 4/n"), name = NULL,
+                                   guide = ggplot2::guide_legend(override.aes = list(alpha = 1, size = 2.5))) +
       ggplot2::geom_hline(yintercept = c(-3, 3), colour = COR[["secundario"]], linetype = "22", linewidth = 0.4) +
       ggplot2::geom_vline(xintercept = 3 * resumo$alavancagem_media, colour = COR[["secundario"]], linetype = "22", linewidth = 0.4) +
       rotulos_lado("Alavancagem × resíduo studentizado",
@@ -186,7 +190,7 @@ graficos_parte_a <- function(res_a, base_modelagem) {
     residuo_setor = ggplot2::ggplot(d, ggplot2::aes(ln_peso, residuo)) +
       ggplot2::geom_point(alpha = 0.04, size = 0.4, colour = COR[["marinho"]], shape = 16) +
       ggplot2::geom_hline(yintercept = 0, colour = COR[["secundario"]], linewidth = 0.3) +
-      ggplot2::geom_smooth(method = "lm", formula = y ~ x, se = FALSE, colour = COR[["laranja"]], linewidth = 0.7) +
+      ggplot2::geom_smooth(method = "lm", formula = y ~ x, se = FALSE, colour = COR[["laranja"]], linewidth = 0.9) +
       ggplot2::facet_wrap(~setor, ncol = 4, labeller = ggplot2::label_wrap_gen(22)) +
       eixo_peso(passo = 2) +
       rotulos_cfs("Resíduos do modelo ampliado × peso, por setor",
@@ -197,7 +201,8 @@ graficos_parte_a <- function(res_a, base_modelagem) {
                                                                     group = setor)) +
       ggplot2::geom_line(linewidth = 0.7) +
       ggplot2::geom_text(data = .fim_curvas(res_a$curvas_setor), ggplot2::aes(y = y_rotulo, label = setor), hjust = 0, nudge_x = 0.1, size = 2.6, show.legend = FALSE) +
-      ggplot2::scale_colour_manual(values = c(`FALSE` = COR[["rotulo"]], `TRUE` = COR[["laranja"]]), guide = "none") +
+      # Os outros setores em cinza-azulado escuro: legiveis, sem competir com a referencia.
+      ggplot2::scale_colour_manual(values = c(`FALSE` = COR[["secundario"]], `TRUE` = COR[["laranja"]]), guide = "none") +
       ggplot2::scale_x_continuous(breaks = log(10^(0:5)), labels = function(b) rotulo_num()(round(exp(b))),
                                   expand = ggplot2::expansion(mult = c(0.02, 0.45))) +
       eixo_valor() +
@@ -218,7 +223,7 @@ graficos_parte_a <- function(res_a, base_modelagem) {
   p <- stats::ppoints(2000)
   d <- tibble::tibble(teorico = stats::qnorm(p), amostral = stats::quantile(r, p, names = FALSE))
   ggplot2::ggplot(d, ggplot2::aes(teorico, amostral)) +
-    ggplot2::geom_abline(slope = 1, intercept = 0, colour = COR[["laranja"]], linewidth = 0.6) +
+    ggplot2::geom_abline(slope = 1, intercept = 0, colour = COR[["laranja"]], linewidth = 0.9) +
     ggplot2::geom_point(colour = COR[["marinho"]], size = 0.7, shape = 16) +
     rotulos_cfs("QQ normal dos resíduos padronizados",
                 "Pontos sobre a reta laranja = resíduos normais. Pontas que se afastam = caudas mais pesadas que a normal.",
