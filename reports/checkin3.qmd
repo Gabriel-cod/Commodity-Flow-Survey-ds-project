@@ -88,7 +88,6 @@ typst <- function(...) knitr::asis_output(paste0("\n```{=typst}\n", paste0(...),
 numero <- function(valor, rotulo, destaque = FALSE) {
   sprintf('numero([%s], [%s]%s)', valor, rotulo, if (destaque) ", destaque: true" else "")
 }
-em_construcao <- function() typst('#etiqueta("Em construção", tipo: "atencao")')
 ```
 
 # Em resumo

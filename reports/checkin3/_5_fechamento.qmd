@@ -1,4 +1,4 @@
-<!-- Seções 7 e 8. Rascunho do agente (23/11), a revisar pelo grupo.
+<!-- Seções 7 e 8. Rascunho do agente, aprovado pelo Gabriel em 23/11; o grupo comenta na PR.
      Texto livre para editar; os números vêm dos atalhos do setup em checkin3.qmd. -->
 
 # Seção 7 — Problemas e limitações
@@ -13,10 +13,11 @@
 - **Caudas pesadas.** Os resíduos da Parte A têm curtose `r num(diag_a("curtose"), 1)`, e
   `r n_fmt(diag_a("studentizado_3"))` remessas passam de 3 desvios. Elas ficaram no modelo, mas os
   intervalos de predição ficam otimistas nas pontas.
-- **Ordem de grandeza, não preço.** O modelo final explica
+- **Ordem de grandeza, não preço.** O modelo final (o modificado, da Seção 4) explica
   `r pct1(100 * ajuste("modificado", "r2"), 0)` da variação de ln(valor); uma remessa típica fica
   entre 1/`r num(exp(ajuste("modificado", "rse")), 1)` e `r num(exp(ajuste("modificado", "rse")), 1)`
-  vezes o valor previsto.
+  vezes o valor previsto (no ampliado da Seção 3, o fator é
+  `r num(exp(ajuste("ampliado", "rse")), 1)`).
 - **A logística só sobe com o peso.** Os dados não: acima de 50 mil libras só
   `r pct1(100 * faixa_b1("(50000,Inf]", "observada"), 0)` saem de caminhão, e o modelo simples prevê
   `r pct1(100 * faixa_b1("(50000,Inf]", "prevista"), 0)`. Nenhum dos dois modelos tem um termo para

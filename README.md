@@ -12,7 +12,7 @@ cada check-in e o motivo de cada decisão tomada.**
 |---|---|---|
 | Check-in 1: conhecendo a base | 30/09/2026 | Entregue |
 | Check-in 2: explorando e descrevendo a base | 26/10/2026 | Entregue: as 8 seções estão no PDF `reports/checkin2.pdf` |
-| Check-in 3: modelando os dados (regressões linear e logística) | 23/11/2026 | Em andamento. A exploração dos preditores da regressão linear está pronta |
+| Check-in 3: modelando os dados (regressões linear e logística) | 23/11/2026 | Pronto para entrega: as 8 seções estão no PDF `reports/checkin3.pdf`, com um PDF por parte |
 
 ## Por onde começar
 
@@ -825,17 +825,16 @@ do grupo. O texto foi revisado e aprovado.**
 
 ### Check-in 3 — Modelando os dados (prazo 23/11/2026)
 
-**Em andamento. Agora entram os modelos: uma regressão linear, que tenta prever o valor de uma
-remessa, e uma logística, que tenta prever se ela vai só de caminhão. A primeira etapa da linear,
-conferir se os candidatos a preditor servem, está pronta.**
+**Pronto. Dois modelos: uma regressão linear, que prevê o valor de uma remessa, e uma logística,
+que prevê se ela sai de caminhão. O peso explica quase tudo nos dois, e o PDF diz onde eles falham.**
 
 A pergunta central do check-in é *"o que os modelos explicam, o que preveem e onde falham?"*. As
 variáveis foram discutidas na 1ª reunião (15/11/2026), e a 2ª reunião é em 22/11/2026.
 
 | Parte | Tema | Situação |
 |---|---|---|
-| A | Regressão linear múltipla: prever ln(valor da remessa) | **Exploração dos preditores pronta**; modelos a fazer |
-| B | Regressão logística: a remessa vai só por caminhão? | A fazer |
+| A | Regressão linear múltipla: prever ln(valor da remessa) | Pronta (texto conferido pelo Gustavo) |
+| B | Regressão logística: a remessa sai de caminhão? | Pronta (B1 conferida pela Mirella; B2 pelo Gabriel) |
 
 #### Parte A — Os preditores da regressão linear ✓
 
@@ -925,6 +924,96 @@ mais longe, mais valiosa.**
     3. ajustar o modelo inicial (sugestão: peso, modal e setor) e o ampliado, com os seis
        preditores;
     4. seguir com diagnóstico, modificação, comparação e predição.
+
+#### Parte A — A regressão linear múltipla ✓
+
+**O modelo final explica 66% da variação do valor. Dobrar o peso aumenta o valor típico em 57%, e
+o modelo acerta a ordem de grandeza da remessa, não o preço.**
+
+- **O que foi feito:**
+  - uma amostra de 100 mil remessas (semente 2026), dividida uma única vez em treino (70%) e teste
+    (30%). Os modelos aprendem no treino; o teste só mede o erro em remessas que eles não viram;
+  - quatro modelos, do mais simples ao mais completo:
+
+    | Modelo | O que entra | R² no treino | Erro no teste (RMSE) |
+    |---|---|---|---|
+    | Inicial | peso, modal e setor | 0,650 | 1,359 |
+    | Ampliado | + distância, carga perigosa e temperatura | 0,657 | 1,344 |
+    | Final (modificado) | + o peso com ritmo próprio em cada setor | 0,663 | 1,335 |
+
+  - diagnóstico dos resíduos (gráficos na Seção 3) e previsão para dois perfis de remessa, com
+    intervalos.
+- **O que os números mostram:**
+  - **o peso faz quase todo o trabalho:** o modelo inicial já chega a 65%;
+  - **o sinal de uma variável sozinha engana** (o exemplo do "jornal" do ISLR): sozinhas, a
+    distância baixa o valor e a carga perigosa e a refrigerada sobem; com o peso no modelo, os três
+    sinais se invertem;
+  - **o setor muda o ritmo:** na mineração, o valor cresce devagar com o peso; na informação, mais
+    depressa;
+  - **no modelo final, a remessa típica fica entre 1/3,8 e 3,8 vezes o valor previsto.** Para a "Carga da indústria"
+    (500 lb, 300 km), o previsto é US$ 1.255, mas uma remessa real pode ir de US$ 91 a US$ 17.386.
+- **Decisões e por quê:**
+  - **distância em log** (confirmada em 22/11);
+  - **as remessas fora do padrão ficam:** 798 passam de 3 desvios, mas nenhuma muda o modelo sozinha
+    (Cook máximo 0,0026), e o arquivo não diz que estão erradas;
+  - **sem o fator de ponderação:** os números descrevem a amostra. Reajustado com o fator, vários
+    coeficientes mudam muito (tabela no apêndice), porque com o fator as encomendas pequenas dominam;
+  - **perfis aprovados pelo Gabriel em 23/11** ("Carga da indústria" e "Encomenda do varejo").
+- **O que mudou:** a semente e o tamanho da amostra foram para o `config.yml`; nada muda na base
+  tratada.
+- **Como continuar:** os números ficam em `obter_resultados_checkin3(base)$parte_a`.
+
+#### Parte B — A regressão logística e o classificador ✓
+
+**O modelo reconhece 87% das remessas de caminhão, com 82% de acerto no geral. Mas a tarefa é mais
+fácil do que parece: quase todo "não caminhão" é encomenda leve, e o peso sozinho já separa os
+dois.**
+
+- **O que foi feito:**
+  - **B1, logística simples** (só o peso): dobrar o peso multiplica a chance de sair de caminhão
+    por 1,40 e soma, em média, 5,9 pontos percentuais à probabilidade;
+  - **B2, logística múltipla** (peso, distância, valor, setor, carga perigosa e temperatura) e um
+    classificador avaliado no teste, com matriz de confusão, sensibilidade, especificidade, a curva
+    ROC e a comparação com uma "régua" (chutar sempre a resposta mais comum).
+- **O que os números mostram:**
+  - **chance não é probabilidade:** dobrar o peso multiplica a chance pelo mesmo número em qualquer
+    remessa, mas a probabilidade sobe 0,5 ponto numa carga refrigerada do atacado e 7,2 pontos numa
+    carga da indústria;
+  - **a logística simples erra nas pontas:** acima de 50 mil libras, só 59% saem de caminhão (o
+    modelo prevê 98%), porque ferrovia e multimodal entram;
+  - **no teste, com o limiar 0,4:** 86,9% das remessas de caminhão reconhecidas, 77,5% das demais e
+    82,0% de acerto, contra 51,4% da régua. A AUC é 0,896 no teste e 0,897 no treino;
+  - **contra quem o caminhão é separado:** 87% das remessas "não caminhão" do treino são encomendas
+    (31.439 de 35.998). Só com o peso, a AUC já é 0,838.
+- **Decisões e por quê:**
+  - **evento = caminhão** (códigos 111 e 112); a retirada pelo cliente conta como "não";
+  - **limiar 0,4, além do 0,5** (Gabriel, 23/11): deixar de reconhecer uma remessa de caminhão é o
+    erro mais grave para quem planeja a frota;
+  - **o achado das encomendas vai como limitação** (Seção 7): conferido, não há vazamento (a
+    distância é em linha reta), mas o classificador diz pouco sobre ferrovia, aéreo e multimodal.
+- **O que mudou:** entraram os pacotes `marginaleffects`, `yardstick` e `probably` no `renv.lock`.
+- **Como continuar:** `obter_resultados_checkin3(base)$parte_b1` e `$parte_b2`.
+
+#### O relatório do Check-in 3 em PDF ✓
+
+**As oito seções estão num PDF de 19 páginas, na mesma identidade visual do Check-in 2, e há um PDF
+por parte para cada responsável revisar a sua.**
+
+- **O que foi feito:**
+  - `reports/checkin3.pdf`, com "Em resumo" (seis números), oito seções e um apêndice;
+  - um `.qmd` por parte em `reports/checkin3/`, só com texto e números calculados, para cada
+    responsável editar sem mexer em código: Parte A, Gustavo; B1, Mirella; B2, Gabriel;
+  - as Seções 7 (limitações) e 8 (o que aprendemos), rascunhadas e aprovadas pelo Gabriel em 23/11;
+    o grupo comenta na PR.
+- **Decisões e por quê:**
+  - **o relatório só lê os resultados prontos:** os modelos rodam nos scripts e ficam guardados em
+    `data/processed/resultados/checkin3/`; o PDF sai em segundos;
+  - **mais contraste nos gráficos** (pedido do Gustavo): as mesmas cores, mas os pontos e as linhas
+    em destaque ficaram mais visíveis;
+  - **15 páginas de corpo**, contra cerca de 12 pedidas: enxugar mexeria em textos já aprovados.
+- **O que mudou:** o Check-in 2 continua igual; o Check-in 3 tem os próprios scripts (21 a 25).
+- **Como continuar:** `quarto render reports/checkin3.qmd`. Para mudar um texto, edite o `.qmd` da
+  parte; para mudar um número, mude o script e renderize de novo (o cache se refaz sozinho).
 
 ---
 
